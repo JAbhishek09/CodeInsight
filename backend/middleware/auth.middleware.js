@@ -29,7 +29,7 @@ export const protect = asyncHandler(async (req, res, next) => {
         throw new Error('Not authorized: Verified user account no longer exists');
       }
 
-      next();
+      return next(); // ← explicit return prevents falling through to the !token check below
     } catch (error) {
       console.error(`🔒 Auth Middleware Token Verification Failed: ${error.message}`);
       res.status(401);
@@ -37,8 +37,7 @@ export const protect = asyncHandler(async (req, res, next) => {
     }
   }
 
-  if (!token) {
-    res.status(401);
-    throw new Error('Not authorized: Missing Authorization Bearer token header');
-  }
+  // Reached only when the Authorization header was absent entirely
+  res.status(401);
+  throw new Error('Not authorized: Missing Authorization Bearer token header');
 });

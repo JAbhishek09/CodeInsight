@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodeInsight</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 320px;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .header h1 { font-size: 15px; font-weight: 600; color: #f8fafc; }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-green { background: #14532d; color: #86efac; }
+    .badge-red   { background: #450a0a; color: #fca5a5; }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: #94a3b8;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .hint a { color: #818cf8; text-decoration: none; }
+    .hint a:hover { text-decoration: underline; }
+
+    .input-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #f1f5f9;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: monospace;
+    }
+    input:focus { border-color: #6366f1; }
+
+    .toggle-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .toggle-btn:hover { background: #334155; color: #e2e8f0; }
+
+    button {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.88; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-secondary { background: #1e293b; border: 1px solid #334155; color: #94a3b8; margin-top: 6px; font-size: 12px; }
+    .btn-danger  { background: #ef4444; color: #fff; margin-top: 6px; }
+
+    .queue-notice {
+      margin-top: 10px;
+      background: #451a03;
+      border: 1px solid #92400e;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #fde68a;
+    }
+
+    .msg {
+      font-size: 12px;
+      text-align: center;
+      margin-top: 8px;
+      min-height: 16px;
+    }
+    .msg-ok  { color: #86efac; }
+    .msg-err { color: #fca5a5; }
+
+    .divider { border: none; border-top: 1px solid #1e293b; margin: 12px 0; }
+    .field-group { margin-bottom: 10px; }
+
+    .steps {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.7;
+      padding-left: 14px;
+    }
+    .steps li { margin-bottom: 2px; }
+    .steps code {
+      background: #1e293b;
+      padding: 1px 4px;
+      border-radius: 3px;
+      color: #a5b4fc;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CodeInsight</h1>
+    <span id="auth-badge" class="badge badge-red">Not connected</span>
+  </div>
+
+  <div class="status-row">
+    <span>Auto-sync</span>
+    <span id="sync-status">—</span>
+  </div>
+
+  <!-- Auth section (shown when not connected) -->
+  <div id="auth-section">
+    <p class="hint">
+      Get your token from <a href="http://localhost:5173" target="_blank">CodeInsight</a>:
+    </p>
+    <ol class="steps" style="margin-bottom: 10px;">
+      <li>Log in to CodeInsight in your browser.</li>
+      <li>Open DevTools → Console, run:<br>
+        <code>localStorage.getItem('codeinsight_token')</code>
+      </li>
+      <li>Copy the printed value and paste below.</li>
+    </ol>
+
+    <div class="field-group">
+      <label for="jwt-input">JWT Token</label>
+      <div class="input-row">
+        <input type="password" id="jwt-input" placeholder="Paste token here…" autocomplete="off" />
+        <button class="toggle-btn" id="toggle-jwt" type="button">Show</button>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <label for="api-base-input">Backend URL</label>
+      <input type="text" id="api-base-input" placeholder="http://localhost:5000" value="http://localhost:5000" />
+    </div>
+
+    <button class="btn-primary" id="save-btn">Save &amp; Connect</button>
+  </div>
+
+  <!-- Connected section -->
+  <div id="connected-section" style="display:none">
+    <p class="hint" style="margin-bottom: 8px;">✓ Extension is connected and will capture future submissions automatically.</p>
+    <button class="btn-danger" id="logout-btn">Disconnect Account</button>
+  </div>
+
+  <div id="queue-notice" class="queue-notice" style="display:none">
+    ⚠ <span id="queue-count">0</span> submission(s) pending retry.
+  </div>
+
+  <p class="msg" id="msg"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

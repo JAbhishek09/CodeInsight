@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { 
   ExternalLink, 
   Trash2, 
@@ -12,7 +13,9 @@ import {
   CircleDot, 
   Hourglass,
   Calendar,
-  Sparkles
+  Sparkles,
+  Brain,
+  Eye
 } from 'lucide-react';
 
 export interface Problem {
@@ -25,6 +28,8 @@ export interface Problem {
   notes?: string;
   timeComplexity?: string;
   spaceComplexity?: string;
+  platform?: string;
+  submissions?: any[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -42,6 +47,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
   onDelete, 
   onToggleStatus 
 }) => {
+  const navigate = useNavigate();
   const [isExpanded, setIsExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
@@ -110,6 +116,10 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
     ? new Date(problem.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Unknown Date';
 
+  const hasCodedSubmission = problem.submissions?.some((s: any) => s.code?.trim().length > 0);
+  const isSynced = problem.platform === 'leetcode' || problem.platform === 'codeforces';
+  const submissionCount = problem.submissions?.length || 0;
+
   return (
     <motion.div
       layout
@@ -132,13 +142,31 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
             <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 border border-slate-950 rounded-full font-medium">
               {problem.category || 'General'}
             </span>
+            {problem.platform && problem.platform !== 'manual' && (
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                problem.platform === 'leetcode'
+                  ? 'bg-amber-950/30 text-amber-400 border-amber-500/20'
+                  : 'bg-blue-950/30 text-blue-400 border-blue-500/20'
+              }`}>
+                {problem.platform}
+              </span>
+            )}
+            {submissionCount > 0 && (
+              <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/20 px-2 py-0.5 border border-indigo-500/20 rounded-full">
+                {submissionCount} submission{submissionCount !== 1 ? 's' : ''}
+              </span>
+            )}
             <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
               <Calendar className="w-3 h-3" />
               <span>{formattedDate}</span>
             </span>
           </div>
 
-          <h3 className="text-sm font-bold text-slate-100 group-hover:text-white transition-colors tracking-tight truncate line-clamp-1">
+          <h3
+            className="text-sm font-bold text-slate-100 group-hover:text-white transition-colors tracking-tight truncate line-clamp-1 cursor-pointer hover:text-pink-300"
+            onClick={() => navigate(`/problems/${problem._id}`)}
+            title="View submission history"
+          >
             {problem.title}
           </h3>
 
@@ -170,7 +198,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
           </div>
         </div>
 
-        {/* Quick Action Buttons (Modify, Delete, Toggle Status) */}
+        {/* Quick Action Buttons */}
         <div className="flex flex-row md:flex-col items-center justify-between md:justify-start gap-2 w-full md:w-auto shrink-0 pt-3 md:pt-0 border-t border-slate-950 md:border-transparent mt-2 md:mt-0">
           
           {/* Quick status swap pill */}
@@ -178,7 +206,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
             onClick={handleToggle}
             disabled={toggling}
             className={`cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 font-mono text-xs font-bold rounded-lg border transition-all ${getStatusStyles(problem.status)} hover:brightness-110`}
-            title="Click to cycle status: Solved -> To Do -> Attempted"
+            title="Click to cycle status"
           >
             {getStatusIcon(problem.status)}
             <span>{problem.status}</span>
@@ -186,8 +214,32 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
           {/* Action Row */}
           <div className="flex items-center gap-1.5 ml-auto md:ml-0">
+            {/* View detail button — for all problems */}
             <button
-              onClick={() => onEdit(problem)}
+              onClick={(e) => { e.stopPropagation(); navigate(`/problems/${problem._id}`); }}
+              className="p-2 bg-slate-900 hover:bg-slate-850 hover:text-cyan-400 border border-slate-900 rounded-lg text-slate-400 cursor-pointer transition-colors"
+              title="View submissions"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+
+            {/* AI Analyze button — only for synced problems with code */}
+            {isSynced && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigate(`/analysis/${problem._id}`); }}
+                className={`p-2 border border-slate-900 rounded-lg cursor-pointer transition-colors ${
+                  hasCodedSubmission
+                    ? 'bg-slate-900 hover:bg-indigo-950/40 hover:text-indigo-400 text-slate-400'
+                    : 'bg-slate-900 text-slate-700 cursor-not-allowed'
+                }`}
+                title={hasCodedSubmission ? 'AI Analysis' : 'AI Analysis (no code yet — use Chrome Extension)'}
+                disabled={!hasCodedSubmission}
+              >
+                <Brain className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(problem); }}
               className="p-2 bg-slate-900 hover:bg-slate-850 hover:text-white border border-slate-900 rounded-lg text-slate-400 cursor-pointer transition-colors"
               title="Edit parameters"
             >
@@ -206,7 +258,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
       </div>
 
-      {/* Expand/Collapse Notes Trigger area */}
+      {/* Expand/Collapse Notes */}
       {problem.notes && (
         <div className="border-t border-slate-950/80 bg-[#090b10]/40">
           <button

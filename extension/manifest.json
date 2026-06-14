@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "CodeInsight – LeetCode Sync",
+  "version": "1.0.0",
+  "description": "Automatically captures your LeetCode submissions and syncs them to CodeInsight for AI-powered analysis.",
+
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*"
+  ],
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "CodeInsight"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

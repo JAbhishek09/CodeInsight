@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Sparkles, BookOpen, Clock, Layers, Loader2, Play } from 'lucide-react';
+import { X, Sparkles, BookOpen, Clock, Layers, Loader2 } from 'lucide-react';
 import { Problem } from './ProblemCard';
 
 export interface ProblemFormData {
@@ -113,7 +113,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ duration: 0.4, cubicBezier: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.4 }}
           className="relative w-full max-w-lg bg-[#0b0e14] border border-slate-900 rounded-2xl overflow-hidden shadow-2xl z-10 p-6 sm:p-8"
           id="modal-sheet"
         >
@@ -179,7 +179,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({
                 <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase font-semibold">Difficulty</label>
                 <select
                   value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value as any)}
+                  onChange={(e) => setDifficulty(e.target.value as 'Easy' | 'Medium' | 'Hard')}
                   className="w-full bg-[#05070a] border border-slate-900 rounded-xl px-3 py-2.5 text-xs text-slate-200 font-sans outline-none focus:border-pink-500/40 transition-all cursor-pointer"
                 >
                   <option value="Easy">🟢 Easy</option>
@@ -192,7 +192,7 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({
                 <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase font-semibold">Status</label>
                 <select
                   value={status}
-                  onChange={(e) => setStatus(e.target.value as any)}
+                  onChange={(e) => setStatus(e.target.value as 'Solved' | 'Attempted' | 'To Do')}
                   className="w-full bg-[#05070a] border border-slate-900 rounded-xl px-3 py-2.5 text-xs text-slate-200 font-sans outline-none focus:border-pink-500/40 transition-all cursor-pointer"
                 >
                   <option value="Solved">✅ Solved</option>

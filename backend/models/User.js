@@ -12,7 +12,6 @@ const UserSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, 'Please provide an email address'],
-      unique: true,
       match: [
         /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
         'Please provide a valid email address',
@@ -24,16 +23,61 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide a password'],
       minlength: [6, 'Password must be at least 6 characters'],
-      select: false, // Prevents password from being returned in standard queries
+      select: false,
     },
     targetDailySolved: {
       type: Number,
-      default: 1, // LeetLens custom profile target tracker
+      default: 1,
     },
     solvedProblemsCount: {
       type: Number,
       default: 0,
-    }
+    },
+
+    // ─── CodeInsight: Platform Handles ────────────────────────────────────────
+    leetcodeHandle: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    codeforcesHandle: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    // ─── CodeInsight: Sync State ───────────────────────────────────────────────
+    lastSyncedAt: {
+      type: Date,
+      default: null,
+    },
+    syncStatus: {
+      type: String,
+      enum: ['idle', 'syncing', 'error'],
+      default: 'idle',
+    },
+
+    // ─── CodeInsight: Historical Import State ─────────────────────────────────
+    // Tracks whether the one-time full history import has been run.
+    //
+    //  'none'     — never run
+    //  'partial'  — AC problem list imported, no code (session not provided)
+    //  'full'     — full import with submission code completed (session provided)
+    //
+    // This is shown in the Profile UI so the user knows what data exists.
+    historyImportStatus: {
+      type: String,
+      enum: ['none', 'partial', 'full'],
+      default: 'none',
+    },
+    historyImportCount: {
+      type: Number,
+      default: 0,
+    },
+    lastHistoryImportAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -41,25 +85,28 @@ const UserSchema = new mongoose.Schema(
 );
 
 /**
- * Pre-save Middleware hook to encrypt student security passwords automatically
- * right before saving or modifying records.
+ * Pre-save hook: hash password only when it is being set/modified.
  */
-UserSchema.pre('save', async function (next) {
+UserSchema.pre('save', async function() {
   if (!this.isModified('password')) {
-    next();
+    return;
   }
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+  } catch (error) {
+    throw error;
+  }
 });
 
 /**
- * Prototype helper method to match passwords on authentication login.
+ * Instance method: compare a plain password against the stored hash.
  */
 UserSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-const User = mongoose.model('User', UserSchema);
+UserSchema.index({ email: 1 }, { unique: true });
 
+const User = mongoose.model('User', UserSchema);
 export default User;

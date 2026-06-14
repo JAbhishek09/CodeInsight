@@ -2,7 +2,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 
 /**
- * @desc    Create a new tracked coding problem
+ * @desc    Create a manual problem entry
  * @route   POST /api/problems
  * @access  Private
  */
@@ -11,10 +11,9 @@ export const createProblem = asyncHandler(async (req, res) => {
 
   if (!title || !difficulty) {
     res.status(400);
-    throw new Error('Please include at least the problem title and difficulty');
+    throw new Error('Please include at least a title and difficulty');
   }
 
-  // Create the problem and link to the authenticated user ID (req.user._id)
   const problem = await Problem.create({
     user: req.user._id,
     title,
@@ -25,40 +24,27 @@ export const createProblem = asyncHandler(async (req, res) => {
     notes,
     timeComplexity,
     spaceComplexity,
+    platform: 'manual',
   });
 
-  res.status(201).json({
-    success: true,
-    data: problem,
-  });
+  res.status(201).json({ success: true, data: problem });
 });
 
 /**
- * @desc    Get all tracked problems for the authenticated user
+ * @desc    Get all problems for the logged-in user
  * @route   GET /api/problems
  * @access  Private
  */
 export const getProblems = asyncHandler(async (req, res) => {
-  const { difficulty, status, category, search } = req.query;
-
-  // Build the query and ensure it strictly targets the logged-in user's data
+  const { difficulty, status, category, search, platform } = req.query;
   const query = { user: req.user._id };
 
-  // Apply optional filters if requested
-  if (difficulty) {
-    query.difficulty = difficulty;
-  }
-  if (status) {
-    query.status = status;
-  }
-  if (category) {
-    query.category = { $regex: category, $options: 'i' }; // case-insensitive regex
-  }
-  if (search) {
-    query.title = { $regex: search, $options: 'i' };
-  }
+  if (difficulty) query.difficulty = difficulty;
+  if (status) query.status = status;
+  if (platform) query.platform = platform;
+  if (category) query.category = { $regex: category, $options: 'i' };
+  if (search) query.title = { $regex: search, $options: 'i' };
 
-  // Retrieve problems, sorted by most recently modified/added
   const problems = await Problem.find(query).sort({ updatedAt: -1 });
 
   res.status(200).json({
@@ -69,7 +55,7 @@ export const getProblems = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get a single tracked problem by ID (authenticated user only)
+ * @desc    Get a single problem by ID
  * @route   GET /api/problems/:id
  * @access  Private
  */
@@ -78,23 +64,19 @@ export const getProblemById = asyncHandler(async (req, res) => {
 
   if (!problem) {
     res.status(404);
-    throw new Error('Problem tracker record not found');
+    throw new Error('Problem not found');
   }
 
-  // Security Gate: Ensure the resource belongs to the requesting user
   if (problem.user.toString() !== req.user._id.toString()) {
     res.status(403);
-    throw new Error('Not authorized to access this tracker resource');
+    throw new Error('Not authorized to access this problem');
   }
 
-  res.status(200).json({
-    success: true,
-    data: problem,
-  });
+  res.status(200).json({ success: true, data: problem });
 });
 
 /**
- * @desc    Update an existing tracked problem (authenticated user only)
+ * @desc    Update a problem
  * @route   PUT /api/problems/:id
  * @access  Private
  */
@@ -103,29 +85,24 @@ export const updateProblem = asyncHandler(async (req, res) => {
 
   if (!problem) {
     res.status(404);
-    throw new Error('Problem tracker record not found');
+    throw new Error('Problem not found');
   }
 
-  // Security Gate: Ensure the problem belongs to the requesting user
   if (problem.user.toString() !== req.user._id.toString()) {
     res.status(403);
-    throw new Error('Not authorized to modify this tracker resource');
+    throw new Error('Not authorized to modify this problem');
   }
 
-  // Update using findByIDAndUpdate to trigger pre/post models hooks safely
   problem = await Problem.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
   });
 
-  res.status(200).json({
-    success: true,
-    data: problem,
-  });
+  res.status(200).json({ success: true, data: problem });
 });
 
 /**
- * @desc    Delete a tracked problem (authenticated user only)
+ * @desc    Delete a problem
  * @route   DELETE /api/problems/:id
  * @access  Private
  */
@@ -134,20 +111,15 @@ export const deleteProblem = asyncHandler(async (req, res) => {
 
   if (!problem) {
     res.status(404);
-    throw new Error('Problem tracker record not found');
+    throw new Error('Problem not found');
   }
 
-  // Security Gate: Ensure the problem belongs to the requesting user
   if (problem.user.toString() !== req.user._id.toString()) {
     res.status(403);
-    throw new Error('Not authorized to delete this tracker resource');
+    throw new Error('Not authorized to delete this problem');
   }
 
-  // Trigger findOneAndDelete to activate post-delete calculations
   await Problem.findOneAndDelete({ _id: req.params.id });
 
-  res.status(200).json({
-    success: true,
-    message: 'Problem tracker record deleted successfully',
-  });
+  res.status(200).json({ success: true, message: 'Problem deleted' });
 });

@@ -1,21 +1,28 @@
-import { createContext, useState, useEffect, ReactNode } from 'react';
-import { 
-  login as loginApi, 
-  register as registerApi, 
-  getMe as getMeApi, 
+import { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import {
+  login as loginApi,
+  register as registerApi,
+  getMe as getMeApi,
   logout as logoutApi,
   LoginPayload,
-  RegisterPayload
+  RegisterPayload,
 } from '../api/auth.api';
 
 export interface UserProfile {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   targetDailySolved?: number;
-  solvedCount?: number;
-  attemptedCount?: number;
+  solvedProblemsCount?: number;
+  leetcodeHandle?: string | null;
+  codeforcesHandle?: string | null;
+  lastSyncedAt?: string | null;
+  syncStatus?: string;
   createdAt?: string;
+  // Historical import state (Phase 1 hybrid architecture)
+  historyImportStatus?: 'none' | 'partial' | 'full';
+  historyImportCount?: number;
+  lastHistoryImportAt?: string | null;
 }
 
 export interface AuthContextType {
@@ -34,75 +41,62 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('leetlens_token'));
+  const [token, setToken] = useState<string | null>(
+    localStorage.getItem('codeinsight_token')
+  );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Synchronize profile retrieval upon mount or direct token update
-  const loadCurrentUser = async () => {
+  const handleSessionPurge = useCallback(() => {
+    logoutApi();
+    setUser(null);
+    setToken(null);
+  }, []);
+
+  const loadCurrentUser = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
-      const activeToken = localStorage.getItem('leetlens_token');
-      
+      const activeToken = localStorage.getItem('codeinsight_token');
       if (activeToken) {
         const response = await getMeApi();
         if (response?.success && response?.data) {
           setUser(response.data);
           setToken(activeToken);
         } else {
-          // Token is invalid/expired
           handleSessionPurge();
         }
       } else {
         setUser(null);
         setToken(null);
       }
-    } catch (err: any) {
-      console.warn('[AuthContext] Session recovery failed:', err.message);
+    } catch {
       handleSessionPurge();
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleSessionPurge = () => {
-    logoutApi();
-    setUser(null);
-    setToken(null);
-  };
+  }, [handleSessionPurge]);
 
   useEffect(() => {
     loadCurrentUser();
-  }, []);
+  }, [loadCurrentUser]);
 
   const login = async (credentials: LoginPayload) => {
     try {
       setLoading(true);
       setError(null);
       const res = await loginApi(credentials);
-      
       if (res?.success && res?.data?.token) {
-        const retrievedToken = res.data.token;
-        setToken(retrievedToken);
-        // User representation could be returned directly or pulled from profile
-        if (res.data.user) {
-          setUser(res.data.user);
-        } else {
-          // Fallback to fetch profile if not fully presented in login login payload
-          const meRes = await getMeApi();
-          if (meRes?.success && meRes?.data) {
-            setUser(meRes.data);
-          }
-        }
+        setToken(res.data.token);
+        const meRes = await getMeApi();
+        if (meRes?.success && meRes?.data) setUser(meRes.data);
         return res;
       } else {
-        throw new Error(res?.message || 'Authentication failed');
+        throw new Error(res?.message || 'Login failed');
       }
     } catch (err: any) {
-      const msg = err.message || 'Login failed';
+      const msg = err.response?.data?.message || err.message || 'Login failed';
       setError(msg);
-      throw err;
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
@@ -113,65 +107,41 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
       setError(null);
       const res = await registerApi(userData);
-      
       if (res?.success && res?.data?.token) {
-        const retrievedToken = res.data.token;
-        setToken(retrievedToken);
-        if (res.data.user) {
-          setUser(res.data.user);
-        } else {
-          const meRes = await getMeApi();
-          if (meRes?.success && meRes?.data) {
-            setUser(meRes.data);
-          }
-        }
+        setToken(res.data.token);
+        const meRes = await getMeApi();
+        if (meRes?.success && meRes?.data) setUser(meRes.data);
         return res;
       } else {
         throw new Error(res?.message || 'Registration failed');
       }
     } catch (err: any) {
-      const msg = err.message || 'Registration failed';
+      const msg = err.response?.data?.message || err.message || 'Registration failed';
       setError(msg);
-      throw err;
+      throw new Error(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    handleSessionPurge();
-  };
+  const logout = useCallback(() => handleSessionPurge(), [handleSessionPurge]);
 
-  const refreshUser = async () => {
-    if (token) {
+  const refreshUser = useCallback(async () => {
+    if (localStorage.getItem('codeinsight_token')) {
       try {
         const res = await getMeApi();
-        if (res?.success && res?.data) {
-          setUser(res.data);
-        }
-      } catch (err: any) {
-        console.error('[AuthContext] Failed to refresh user metrics:', err.message);
+        if (res?.success && res?.data) setUser(res.data);
+      } catch {
+        // silent — let the interceptor handle 401
       }
     }
-  };
+  }, []);
 
-  const clearError = () => {
-    setError(null);
-  };
+  const clearError = useCallback(() => setError(null), []);
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        token,
-        loading,
-        error,
-        login,
-        register,
-        logout,
-        refreshUser,
-        clearError
-      }}
+      value={{ user, token, loading, error, login, register, logout, refreshUser, clearError }}
     >
       {children}
     </AuthContext.Provider>
