@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode } from '../api/import.api';
+import { useState, useRef, useEffect } from 'react';
+import { importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode, getCodeCoverageStatus } from '../api/import.api';
 import { Download, Code2, AlertCircle, CheckCircle2, ChevronRight, Eye, EyeOff, Loader2, RotateCcw } from 'lucide-react';
 
 interface Props {
@@ -41,6 +41,32 @@ export default function HistoryImport({
 
   const abortRef = useRef(false);
 
+  // Live code coverage — ground truth from MongoDB, not the static
+  // historyImportStatus prop (which doesn't know about extension-synced code).
+  const [coverage, setCoverage] = useState<{
+    status: 'none' | 'partial' | 'mixed' | 'full';
+    acceptedSubmissions: number;
+    acceptedWithCode: number;
+    missingCode: number;
+  } | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(true);
+
+  const refreshCoverage = async () => {
+    setCoverageLoading(true);
+    try {
+      const data = await getCodeCoverageStatus();
+      setCoverage(data);
+    } catch {
+      // Non-fatal — fall back to the static prop-based label below
+    } finally {
+      setCoverageLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshCoverage();
+  }, []);
+
   const handleImportProblems = async () => {
     setImportingProblems(true);
     setProblemResult(null);
@@ -49,6 +75,7 @@ export default function HistoryImport({
       const data = await importLeetcodeProblems(sessionCookie.trim() || undefined);
       setProblemResult(data.message);
       onImportComplete();
+      refreshCoverage();
     } catch (e: any) {
       setProblemError(e.message || 'Import failed');
     } finally {
@@ -148,6 +175,7 @@ export default function HistoryImport({
 
       setCodeComplete(true);
       onImportComplete();
+      refreshCoverage();
     } catch (e: any) {
       setCodeError(e.message || 'Code import failed');
     } finally {
@@ -178,8 +206,16 @@ export default function HistoryImport({
   const statusLabel: Record<string, string> = {
     none:    'Not started',
     partial: 'Problems imported (no code)',
+    mixed:   'Some code missing',
     full:    'Full import complete',
   };
+
+  // Prefer the live, ground-truth coverage status. Fall back to the static
+  // historyImportStatus prop only while coverage is still loading.
+  const effectiveStatus = coverageLoading ? historyImportStatus : (coverage?.status ?? historyImportStatus);
+  const coverageDetail = coverage && coverage.acceptedSubmissions > 0
+    ? `${coverage.acceptedWithCode}/${coverage.acceptedSubmissions} submissions have code`
+    : null;
 
   return (
     <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-6">
@@ -190,13 +226,18 @@ export default function HistoryImport({
           <h3 className="text-sm font-bold text-slate-100">Import LeetCode History</h3>
         </div>
         <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-          historyImportStatus === 'full'    ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20' :
-          historyImportStatus === 'partial' ? 'text-yellow-400  border-yellow-500/30  bg-yellow-950/20'  :
+          effectiveStatus === 'full'    ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20' :
+          effectiveStatus === 'mixed'   ? 'text-orange-400  border-orange-500/30   bg-orange-950/20'  :
+          effectiveStatus === 'partial' ? 'text-yellow-400  border-yellow-500/30  bg-yellow-950/20'  :
                                               'text-slate-500   border-slate-800       bg-slate-900/40'
         }`}>
-          {statusLabel[historyImportStatus] ?? 'Unknown'}
+          {statusLabel[effectiveStatus] ?? 'Unknown'}
         </span>
       </div>
+
+      {coverageDetail && (
+        <p className="text-[11px] font-mono text-slate-500">{coverageDetail}</p>
+      )}
 
       {historyImportCount > 0 && lastHistoryImportAt && (
         <p className="text-[11px] font-mono text-slate-500">

@@ -6,12 +6,40 @@ const $ = id => document.getElementById(id);
 
 async function getStatus() {
   return new Promise(resolve => {
-    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, resolve);
+    chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
+      // chrome.runtime.lastError is set (not thrown) when there's no
+      // receiving end — e.g. the service worker is dead/asleep and hasn't
+      // been (re)started yet. Reading it here prevents an "Unchecked
+      // runtime.lastError" warning in the console and lets callers treat
+      // a dead background script the same as "undefined response".
+      if (chrome.runtime.lastError) {
+        console.warn('[CodeInsight Popup] GET_STATUS error:', chrome.runtime.lastError.message);
+        resolve(undefined);
+        return;
+      }
+      resolve(response);
+    });
   });
 }
 
 async function init() {
   const status = await getStatus();
+
+  // Defensive handling: chrome.runtime.sendMessage's resolve callback fires
+  // with `undefined` (not a rejection) when there is no receiving end —
+  // e.g. the background service worker crashed, hasn't woken up yet, or
+  // chrome.runtime.lastError was set. Treat that the same as "not
+  // connected" instead of letting `status.authenticated` throw and break
+  // the entire popup.
+  if (!status) {
+    console.warn('[CodeInsight Popup] GET_STATUS returned no response — background service worker may be unavailable.');
+    const badge = $('auth-badge');
+    badge.textContent = 'Unavailable';
+    badge.className = 'badge badge-red';
+    $('sync-status').textContent = 'Disabled';
+    showMsg('Extension background script is unavailable. Try reloading the extension.', 'err');
+    return;
+  }
 
   const badge = $('auth-badge');
   if (status.authenticated) {

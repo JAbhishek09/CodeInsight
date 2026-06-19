@@ -52,6 +52,76 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Code coverage status — computed live from actual submission data, not from
+// the static User.historyImportStatus flag.
+//
+// WHY THIS EXISTS: historyImportStatus is set unconditionally to 'partial' by
+// Step 1 (importLeetcodeProblems) and to 'full' only once Step 2/1C finishes
+// every page. It has no idea whether individual problems already have code —
+// e.g. from the Chrome extension's live sync, which writes code directly via
+// extension.controller.js and never touches historyImportStatus at all.
+//
+// This endpoint counts, across all of the user's LeetCode problems, how many
+// Accepted submissions actually have a non-empty `code` field right now in
+// MongoDB. The frontend badge should use this instead of the static enum so
+// it always reflects ground truth.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getCodeCoverageStatus = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const result = await Problem.aggregate([
+    { $match: { user: userId, platform: 'leetcode' } },
+    { $unwind: { path: '$submissions', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        totalProblems: { $addToSet: '$_id' },
+        acceptedSubmissions: {
+          $sum: { $cond: [{ $eq: ['$submissions.verdict', 'Accepted'] }, 1, 0] },
+        },
+        acceptedWithCode: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$submissions.verdict', 'Accepted'] },
+                  { $ne: ['$submissions.code', null] },
+                  { $ne: ['$submissions.code', ''] },
+                ],
+              },
+              1, 0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  const stats = result[0] || { totalProblems: [], acceptedSubmissions: 0, acceptedWithCode: 0 };
+  const totalProblems = stats.totalProblems.length;
+  const acceptedSubmissions = stats.acceptedSubmissions;
+  const acceptedWithCode = stats.acceptedWithCode;
+
+  let status = 'none';
+  if (totalProblems > 0) {
+    if (acceptedSubmissions === 0) status = 'partial';        // problems imported, no submissions yet
+    else if (acceptedWithCode === 0) status = 'partial';      // no code at all
+    else if (acceptedWithCode >= acceptedSubmissions) status = 'full';
+    else status = 'mixed';                                    // some have code, some don't
+  }
+
+  res.status(200).json({
+    success: true,
+    totalProblems,
+    acceptedSubmissions,
+    acceptedWithCode,
+    missingCode: Math.max(0, acceptedSubmissions - acceptedWithCode),
+    status, // 'none' | 'partial' | 'mixed' | 'full'
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 1B — One page of submission history WITH code (REST, cursor-based)
 // FIX 1: Uses fetchSubmissionHistoryREST() not fetchSubmissionHistory().
 // FIX 2: Pagination via lastKey cursor string, not integer offset.
