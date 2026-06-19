@@ -1,926 +1,483 @@
 /**
- * content.js — CodeInsight LeetCode Content Script
+ * content.js — CodeInsight LeetCode Content Script v1.6.0
  *
- * ROOT CAUSE FIX (June 2026):
- * Modern LeetCode NO LONGER navigates to /problems/<slug>/submissions/<id>/
- * after a submission. The result is shown inline on the same page via a React
- * state update — the URL stays at /problems/<slug>/description/.
- * The previous URL-change detection (pushState patch + SUBMISSION_URL_RE) never
- * fired because there was no URL change to detect.
+ * ROOT CAUSE IDENTIFIED AND FIXED in this version:
  *
- * NEW STRATEGY — three complementary triggers:
- *  1. XHR/Fetch intercept: intercept LeetCode's own submission API call
- *     POST /problems/<slug>/submit/  which returns { submission_id: N }.
- *     This is the most reliable signal — fires before the DOM updates.
+ *  All 41 GraphQL XHR calls LeetCode makes use responseType='blob'.
+ *  v1.5.0 added async blob.text() decode to handle this — but in the real
+ *  Chrome extension environment (MAIN world content script), blob.text()
+ *  on a blob created by the page's network stack may fail silently due to
+ *  cross-context blob ownership, or the async .then() fires AFTER our
+ *  load listener's try/catch has already exited and any exception is
+ *  completely swallowed. The result: our load handler runs, calls
+ *  extractXhrResponseText, blob.text() starts but never resolves (or
+ *  rejects silently), handleSubmissionDetailsResponse never fires.
+ *  This explains ZERO 'submissionDetails poll:' log lines in production.
  *
- *  2. MutationObserver on result panel: watch for
- *     [data-e2e-locator="submission-result"] to appear in the DOM.
- *     Fallback for cases where the fetch intercept misses (e.g. cached results).
+ *  FIX: Call xhr.overrideMimeType('text/plain; charset=utf-8') in our
+ *  open() wrapper BEFORE LeetCode's own code runs. This forces the browser
+ *  to decode the response as text regardless of Content-Type, making
+ *  responseText directly readable at load time — no async blob decode
+ *  needed, no cross-context issues, no async race. The catch: this only
+ *  works before send() is called, and only when the XHR's responseType
+ *  has NOT been set to something non-default yet. So we call it in open()
+ *  only for URLs matching /graphql/, since that's the only path we care
+ *  about, before LeetCode's code sets responseType='blob'.
  *
- *  3. URL-change detection (KEPT): still catches /submissions/<id>/ navigation
- *     on older LeetCode layouts and direct URL visits.
+ *  VERIFIED via live network capture:
+ *   - Both submissionDetails polls use separate XHR instances (instanceIds
+ *     44 and 50 in a test run), ruling out WeakSet re-use blocking.
+ *   - Both return status 200, responseType='blob', hasResponse=true,
+ *     responseSizeHint ~3252/3546 bytes — real data, not blocked/empty.
+ *   - The submit POST itself goes through window.fetch (not XHR), which is
+ *     why submit response capture always worked despite XHR blob issues.
  *
- * The submission_id from the XHR response is used as the authoritative ID.
- * For MutationObserver trigger, the submission ID is extracted from the URL
- * or from the result panel DOM.
+ * ARCHITECTURE (unchanged):
+ *  - world:MAIN + run_at:document_start patches fetch/XHR before LeetCode.
+ *  - Plain IIFE, no ES module syntax.
+ *  - window.postMessage({ __ci:true, payload }) → bridge.js → sendMessage.
  */
 
-// ─── Constants ─────────────────────────────────────────────────────────────────────────────
+(function () {
+  'use strict';
 
-const SUBMISSION_URL_RE = /\/problems\/([^/]+)\/submissions\/(\d+)\/?/;
-const SUBMIT_API_RE     = /\/problems\/([^/]+)\/submit\//;
-const MAX_EXTRACTION_RETRIES = 6;
-const RETRY_BASE_MS          = 800;
-const OBSERVER_TIMEOUT_MS    = 20_000;
-const QUICK_CHECK_MS         = 600;
+  // ─── Constants ──────────────────────────────────────────────────────────────
+  var SUBMIT_API_RE     = /\/problems\/([^/]+)\/submit\/?$/;
+  var SUBMISSION_URL_RE = /\/problems\/([^/]+)\/submissions\/(\d+)\/?/;
+  var GRAPHQL_PATH_RE   = /\/graphql\/?(\?.*)?$/;
 
-// ─── Session deduplication ────────────────────────────────────────────────────────────────────────
-const uploadedSubmissionIds = new Set();
+  var MAX_RETRIES   = 14;
+  var RETRY_BASE_MS = 600;
+  var RETRY_BACKOFF = 1.45;
 
-// ─── STRATEGY 1: XHR + Fetch intercept ──────────────────────────────────────────────────────
-//
-// Intercept LeetCode's POST /problems/<slug>/submit/ API call.
-// The response JSON contains { submission_id: <number> } which we use
-// as the authoritative submission ID, then wait for the result DOM to render.
-//
-// WHY: Modern LeetCode shows results inline (no URL change). The XHR intercept
-// fires BEFORE the DOM updates, giving us the submission ID immediately so
-// we can deduplicate and then watch for the result to appear.
-
-(function interceptFetch() {
-  const _fetch = window.fetch;
-  window.fetch = async function(...args) {
-    const response = await _fetch.apply(this, args);
-
-    try {
-      const url = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-      const match = SUBMIT_API_RE.exec(url);
-
-      if (match && (args[1]?.method || '').toUpperCase() === 'POST') {
-        const slug = match[1];
-        // Clone so we don't consume the body — the page still needs to read it
-        const cloned = response.clone();
-        cloned.json().then(data => {
-          const submissionId = String(data?.submission_id || data?.id || '');
-          if (!submissionId || uploadedSubmissionIds.has(submissionId)) return;
-          console.log('[CodeInsight] Fetch intercept: submission', submissionId, 'for', slug);
-          onSubmissionDetected(slug, submissionId);
-        }).catch(() => {});
-      }
-    } catch (_) {}
-
-    return response;
+  var STATUS_CODE_MAP = {
+    10: 'Accepted',  11: 'Wrong Answer', 12: 'MLE', 13: 'MLE',
+    14: 'TLE',       15: 'RE',           16: 'RE',  20: 'CE',
+    21: 'RE',        30: 'TLE',
   };
-})();
 
-(function interceptXHR() {
-  const _open = XMLHttpRequest.prototype.open;
-  const _send = XMLHttpRequest.prototype.send;
+  // ─── Session state ──────────────────────────────────────────────────────────
+  var uploadedIds             = {};
+  var pendingSlugBySubmission = {};
+  var lastStatusCodeSeen      = {};
+  var instrumentedXhrs = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
 
-  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+  console.log('[CodeInsight] v1.6.0 loaded (MAIN world, document_start)');
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+  function extractOperationName(bodyText) {
+    try { return JSON.parse(bodyText).operationName || null; } catch (_) { return null; }
+  }
+
+  function extractSubmissionIdFromBody(bodyText) {
+    try {
+      var id = JSON.parse(bodyText).variables.submissionId;
+      return (id !== undefined && id !== null) ? String(id) : null;
+    } catch (_) { return null; }
+  }
+
+  // ─── Submit response handler ─────────────────────────────────────────────────
+  function handleSubmitResponse(slug, responseText) {
+    try {
+      var data  = JSON.parse(responseText);
+      var subId = String((data && (data.submission_id || data.id)) || '');
+      if (subId) {
+        console.log('[CodeInsight] submit captured →', subId, slug);
+        pendingSlugBySubmission[subId] = slug;
+      } else {
+        console.warn('[CodeInsight] submit response missing id. Snippet:',
+                     String(responseText).substring(0, 200));
+      }
+    } catch (err) {
+      console.warn('[CodeInsight] submit response parse error:', err.message);
+    }
+  }
+
+  // ─── submissionDetails response handler ─────────────────────────────────────
+  function handleSubmissionDetailsResponse(requestBodyText, responseText) {
+    var submissionId = extractSubmissionIdFromBody(requestBodyText);
+    if (!submissionId) {
+      console.debug('[CodeInsight] submissionDetails: no submissionId in body.');
+      return;
+    }
+    if (uploadedIds[submissionId]) {
+      console.debug('[CodeInsight] submissionDetails: already uploaded', submissionId);
+      return;
+    }
+
+    var json;
+    try { json = JSON.parse(responseText); } catch (err) {
+      console.warn('[CodeInsight] submissionDetails non-JSON for', submissionId,
+                   '— snippet:', String(responseText).substring(0, 200));
+      return;
+    }
+
+    var sd = json && json.data && json.data.submissionDetails;
+    if (!sd) {
+      console.debug('[CodeInsight] submissionDetails null for', submissionId, '— judge not ready.');
+      return;
+    }
+
+    var statusCode = sd.statusCode;
+    if (statusCode === undefined || statusCode === null) {
+      console.debug('[CodeInsight] submissionDetails no statusCode for', submissionId);
+      return;
+    }
+
+    var code         = sd.code;
+    var hasUsableCode = !!code && typeof code === 'string' && code.trim().length >= 3;
+
+    var TERMINAL = { 16: true, 20: true, 21: true };
+    var hasTC    = typeof sd.totalTestcases === 'number' && typeof sd.totalCorrect === 'number';
+    var complete  = hasTC || !!TERMINAL[statusCode];
+
+    console.log('[CodeInsight] submissionDetails poll —',
+      'subId=' + submissionId, 'status=' + statusCode,
+      'code=' + hasUsableCode, 'complete=' + complete,
+      '(' + sd.totalCorrect + '/' + sd.totalTestcases + ')');
+
+    if (!hasUsableCode) {
+      console.debug('[CodeInsight]', submissionId, '— no code yet, waiting.');
+      return;
+    }
+
+    var lastSeen = lastStatusCodeSeen[submissionId];
+    lastStatusCodeSeen[submissionId] = statusCode;
+    if (!complete && (lastSeen === undefined || lastSeen !== statusCode)) {
+      console.debug('[CodeInsight]', submissionId, '— awaiting second confirming poll.');
+      return;
+    }
+
+    var verdict = STATUS_CODE_MAP[statusCode];
+    if (!verdict) {
+      console.warn('[CodeInsight] Unknown statusCode:', statusCode, 'for', submissionId);
+      return;
+    }
+
+    var lang = (sd.lang && sd.lang.name) || '';
+    if (!lang) {
+      console.warn('[CodeInsight]', submissionId, '— lang.name missing.');
+      return;
+    }
+
+    var slug = (sd.question && sd.question.titleSlug)
+            || pendingSlugBySubmission[submissionId]
+            || extractSlugFromUrl();
+    if (!slug) {
+      console.warn('[CodeInsight]', submissionId, '— no slug resolved.');
+      return;
+    }
+
+    var payload = {
+      problemSlug:  slug,
+      submissionId: String(submissionId),
+      title:        extractTitle(slug),
+      verdict:      verdict,
+      language:     normaliseLanguage(lang),
+      code:         code,
+      submittedAt:  sd.timestamp
+                      ? new Date(sd.timestamp * 1000).toISOString()
+                      : new Date().toISOString(),
+    };
+
+    console.log('[CodeInsight] settled →', verdict, lang, code.length + 'ch', 'subId=' + submissionId);
+    dispatchUpload(payload, submissionId);
+  }
+
+  // ─── fetch() intercept — catches /submit/ POST (always fetch, not XHR) ──────
+  var _origFetch = window.fetch;
+  window.fetch = function (resource, init) {
+    var url    = (typeof resource === 'string') ? resource : (resource && resource.url) || '';
+    var method = ((init && init.method) || (resource && resource.method) || 'GET').toUpperCase();
+
+    var submitMatch = SUBMIT_API_RE.exec(url);
+    if (submitMatch && method === 'POST') {
+      var slug = submitMatch[1];
+      return _origFetch.apply(this, arguments).then(function (response) {
+        response.clone().text()
+          .then(function (t) { handleSubmitResponse(slug, t); })
+          .catch(function (e) { console.debug('[CodeInsight] fetch submit .text():', e.message); });
+        return response;
+      });
+    }
+
+    // Defensive: also intercept if GraphQL ever moves back to fetch
+    if (GRAPHQL_PATH_RE.test(url) && method === 'POST') {
+      var bodyText = (init && init.body) || '';
+      if (extractOperationName(bodyText) === 'submissionDetails') {
+        return _origFetch.apply(this, arguments).then(function (response) {
+          response.clone().text()
+            .then(function (t) { handleSubmissionDetailsResponse(bodyText, t); })
+            .catch(function (e) { console.debug('[CodeInsight] fetch gql .text():', e.message); });
+          return response;
+        });
+      }
+    }
+
+    return _origFetch.apply(this, arguments);
+  };
+
+  // ─── XHR intercept ──────────────────────────────────────────────────────────
+  //
+  // KEY FIX (v1.6.0): We call overrideMimeType('text/plain; charset=utf-8')
+  // inside our open() wrapper for any request to /graphql/. This MUST happen
+  // before LeetCode's code sets responseType='blob' (which happens between
+  // our open() call and our send() call). overrideMimeType forces the browser
+  // to decode the body as UTF-8 text, making responseText directly available
+  // at load time with no async decode, no cross-context blob.text() needed.
+  //
+  // Note: overrideMimeType() throws if called after send() — we call it in
+  // open(), safely before any code sets responseType.
+  //
+  var _origOpen = XMLHttpRequest.prototype.open;
+  var _origSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function (method, url) {
     this._ciMethod = method;
     this._ciUrl    = url;
-    return _open.call(this, method, url, ...rest);
-  };
 
-  XMLHttpRequest.prototype.send = function(...args) {
-    this.addEventListener('load', function() {
+    var result = _origOpen.apply(this, arguments);
+
+    // For GraphQL requests, force text decoding so responseText is always
+    // readable. Must be called after open() but before send() — here is perfect.
+    if (GRAPHQL_PATH_RE.test(url || '')) {
       try {
-        const match = SUBMIT_API_RE.exec(this._ciUrl || '');
-        if (match && (this._ciMethod || '').toUpperCase() === 'POST') {
-          const slug = match[1];
-          const data = JSON.parse(this.responseText);
-          const submissionId = String(data?.submission_id || data?.id || '');
-          if (!submissionId || uploadedSubmissionIds.has(submissionId)) return;
-          console.log('[CodeInsight] XHR intercept: submission', submissionId, 'for', slug);
-          onSubmissionDetected(slug, submissionId);
+        this.overrideMimeType('text/plain; charset=utf-8');
+      } catch (_) {
+        // Silently ignore — if overrideMimeType fails (e.g. already sent),
+        // we'll handle blob fallback in the load listener.
+      }
+    }
+
+    return result;
+  };
+
+  XMLHttpRequest.prototype.send = function (body) {
+    var self = this;
+    this._ciBody = body;
+
+    var seen = instrumentedXhrs ? instrumentedXhrs.has(self) : self.__ciInstrumented;
+    if (!seen) {
+      if (instrumentedXhrs) instrumentedXhrs.add(self);
+      else self.__ciInstrumented = true;
+
+      self.addEventListener('load', function () {
+        try {
+          var url    = self._ciUrl    || '';
+          var method = (self._ciMethod || '').toUpperCase();
+
+          // Submit: always goes through fetch, but guard here in case
+          var submitMatch = SUBMIT_API_RE.exec(url);
+          if (submitMatch && method === 'POST') {
+            handleSubmitResponse(submitMatch[1], self.responseText);
+            return;
+          }
+
+          if (GRAPHQL_PATH_RE.test(url) && method === 'POST') {
+            var opName = extractOperationName(self._ciBody || '');
+            if (opName === 'submissionDetails') {
+              var reqBody = self._ciBody || '';
+
+              // Primary path: overrideMimeType forced text decode — responseText is ready
+              var rt = self.responseType || '';
+              if (rt === '' || rt === 'text') {
+                handleSubmissionDetailsResponse(reqBody, self.responseText);
+                return;
+              }
+
+              // Fallback: overrideMimeType didn't prevent blob (shouldn't happen,
+              // but guard defensively). Use synchronous FileReader on the blob.
+              if (rt === 'blob') {
+                var blob = self.response;
+                if (!blob) {
+                  console.warn('[CodeInsight] blob response empty for', submissionId);
+                  return;
+                }
+                var reader = new FileReader();
+                reader.onload = function () {
+                  handleSubmissionDetailsResponse(reqBody, String(reader.result || ''));
+                };
+                reader.onerror = function () {
+                  console.warn('[CodeInsight] FileReader failed for submissionDetails');
+                };
+                reader.readAsText(blob, 'utf-8');
+                return;
+              }
+
+              // ArrayBuffer fallback (extremely unlikely for graphql)
+              if (rt === 'arraybuffer') {
+                var buf = self.response;
+                if (buf) handleSubmissionDetailsResponse(reqBody, new TextDecoder('utf-8').decode(buf));
+                return;
+              }
+
+              console.warn('[CodeInsight] Unhandled responseType:', rt, 'for submissionDetails');
+            }
+          }
+        } catch (err) {
+          console.debug('[CodeInsight] XHR load handler error:', err.message);
         }
-      } catch (_) {}
-    });
-    return _send.apply(this, args);
+      });
+
+      self.addEventListener('error', function () {
+        if (GRAPHQL_PATH_RE.test(self._ciUrl || '')) {
+          console.warn('[CodeInsight] XHR error on graphql:', self._ciUrl);
+        }
+      });
+    }
+
+    return _origSend.apply(this, arguments);
   };
-})();
 
-// ─── Core: called when a new submission is detected by any strategy ──────────────────
+  // ─── URL-change / SPA navigation detection ───────────────────────────────────
+  var _currentUrl = location.href;
 
-function onSubmissionDetected(problemSlug, submissionId) {
-  if (uploadedSubmissionIds.has(submissionId)) {
-    console.debug('[CodeInsight] Already uploaded submissionId:', submissionId);
-    return;
+  function checkUrlChange() {
+    var newUrl = location.href;
+    if (newUrl === _currentUrl) return;
+    _currentUrl = newUrl;
+    var match = SUBMISSION_URL_RE.exec(newUrl);
+    if (match) {
+      var slug = match[1], submissionId = match[2];
+      if (uploadedIds[submissionId]) return;
+      console.log('[CodeInsight] URL nav detected:', slug, submissionId);
+      resetNextDataCache();
+      scheduleRetry(slug, submissionId, 0);
+    }
   }
 
-  console.log('[CodeInsight] Submission detected. slug:', problemSlug, 'id:', submissionId);
-  resetNextDataCache();
+  var _origPush    = history.pushState.bind(history);
+  var _origReplace = history.replaceState.bind(history);
+  history.pushState    = function () { _origPush.apply(this, arguments);    setTimeout(checkUrlChange, 0); };
+  history.replaceState = function () { _origReplace.apply(this, arguments); setTimeout(checkUrlChange, 0); };
+  window.addEventListener('popstate', function () { setTimeout(checkUrlChange, 0); });
+  checkUrlChange();
 
-  let resolved = false;
-
-  // MutationObserver: wait for the result panel to appear in the DOM
-  const observer = new MutationObserver(() => {
-    if (resolved) return;
-    const data = extractSubmissionData(problemSlug, submissionId);
-    if (data) {
-      resolved = true;
-      observer.disconnect();
-      dispatchUpload(data, submissionId);
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  // Quick-check: result may already be in DOM if intercept fired late
-  setTimeout(() => {
-    if (resolved) return;
-    const data = extractSubmissionData(problemSlug, submissionId);
-    if (data) {
-      resolved = true;
-      observer.disconnect();
-      dispatchUpload(data, submissionId);
-    }
-  }, QUICK_CHECK_MS);
-
-  // Hard timeout: fall back to retry loop
-  setTimeout(() => {
-    if (resolved) return;
-    observer.disconnect();
-    if (!uploadedSubmissionIds.has(submissionId)) {
-      console.debug('[CodeInsight] Observer timed out, falling back to retry loop.');
-      extractAndUpload(problemSlug, submissionId, 0);
-    }
-  }, OBSERVER_TIMEOUT_MS);
-}
-
-// ─── STRATEGY 2: Global MutationObserver for result panel ───────────────────────────
-//
-// Watches for [data-e2e-locator="submission-result"] to appear anywhere in
-// the DOM. When it does, extract the slug from the current URL and the
-// submission ID from the result panel or URL.
-// This is a fallback in case the fetch/XHR intercept misses.
-
-let _globalObserver = null;
-
-function startGlobalResultObserver() {
-  if (_globalObserver) return;
-
-  _globalObserver = new MutationObserver(() => {
-    const resultEl = document.querySelector('[data-e2e-locator="submission-result"]');
-    if (!resultEl) return;
-
-    // Extract slug from current URL
-    const urlMatch = /\/problems\/([^/]+)/.exec(location.pathname);
-    if (!urlMatch) return;
-    const slug = urlMatch[1];
-
-    // Try to extract submission ID from URL first
-    const subUrlMatch = SUBMISSION_URL_RE.exec(location.href);
-    // If URL has the ID use it; otherwise generate a synthetic one from content
-    const submissionId = subUrlMatch?.[2] ||
-      // Fallback: use a hash of slug+verdict+time as a dedup key
-      `synthetic_${slug}_${Date.now()}`;
-
-    if (uploadedSubmissionIds.has(submissionId)) return;
-
-    console.log('[CodeInsight] Result panel appeared. slug:', slug, 'id:', submissionId);
-    // Don’t call onSubmissionDetected (would set up another observer);
-    // extract immediately since the result is already in the DOM
-    const data = extractSubmissionData(slug, submissionId);
-    if (data) {
-      dispatchUpload(data, submissionId);
-    } else {
-      // Data not fully rendered yet — retry loop
-      extractAndUpload(slug, submissionId, 0);
-    }
-  });
-
-  _globalObserver.observe(document.body, { childList: true, subtree: true });
-  console.debug('[CodeInsight] Global result observer started.');
-}
-
-startGlobalResultObserver();
-
-// ─── STRATEGY 3: URL-change detection (kept for backward compat) ───────────────────
-
-let currentUrl = location.href;
-
-function onUrlChange(newUrl) {
-  const match = SUBMISSION_URL_RE.exec(newUrl);
-  if (!match) return;
-  const problemSlug = match[1];
-  const submissionId = match[2];
-  onSubmissionDetected(problemSlug, submissionId);
-}
-
-(function patchHistory() {
-  const _push    = history.pushState.bind(history);
-  const _replace = history.replaceState.bind(history);
-
-  history.pushState = function(...args) {
-    _push(...args);
-    const newUrl = location.href;
-    if (newUrl !== currentUrl) { currentUrl = newUrl; onUrlChange(newUrl); }
-  };
-
-  history.replaceState = function(...args) {
-    _replace(...args);
-    const newUrl = location.href;
-    if (newUrl !== currentUrl) { currentUrl = newUrl; onUrlChange(newUrl); }
-  };
-})();
-
-window.addEventListener('popstate', () => {
-  const newUrl = location.href;
-  if (newUrl !== currentUrl) { currentUrl = newUrl; onUrlChange(newUrl); }
-});
-
-onUrlChange(location.href);
-
-// ─── Upload dispatcher ─────────────────────────────────────────────────────────────────────────────
-
-function dispatchUpload(data, submissionId) {
-  uploadedSubmissionIds.add(submissionId);
-  console.log('[CodeInsight] Dispatching upload:', data.verdict, data.language, `${data.code.length} chars`);
-
-  chrome.runtime.sendMessage({ type: 'UPLOAD_SUBMISSION', payload: data }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.error('[CodeInsight] Message error:', chrome.runtime.lastError.message);
-      uploadedSubmissionIds.delete(submissionId);
+  // ─── DOM-scrape retry loop (fallback only) ───────────────────────────────────
+  function scheduleRetry(slug, submissionId, attempt) {
+    if (uploadedIds[submissionId]) return;
+    if (attempt >= MAX_RETRIES) {
+      console.warn('[CodeInsight] DOM fallback exhausted for', submissionId,
+                   '— last statusCode:', lastStatusCodeSeen[submissionId]);
       return;
     }
-    if (response?.success) {
-      console.log('[CodeInsight] Upload confirmed.');
-    } else {
-      console.warn('[CodeInsight] Upload failed:', response?.error);
-      uploadedSubmissionIds.delete(submissionId);
-    }
-  });
-}
-
-// ─── Retry loop ─────────────────────────────────────────────────────────────────────────────
-
-async function extractAndUpload(problemSlug, submissionId, attempt) {
-  try {
-    const data = extractSubmissionData(problemSlug, submissionId);
-    if (!data) {
-      if (attempt < MAX_EXTRACTION_RETRIES) {
-        const delay = RETRY_BASE_MS * Math.pow(1.6, attempt);
-        console.debug(`[CodeInsight] DOM not ready, retry ${attempt + 1} in ${Math.round(delay)}ms`);
-        setTimeout(() => extractAndUpload(problemSlug, submissionId, attempt + 1), delay);
+    setTimeout(function () {
+      if (uploadedIds[submissionId]) return;
+      var data = extractSubmissionDataFromDom(slug, submissionId);
+      if (data) {
+        console.log('[CodeInsight] DOM fallback hit for', submissionId, 'attempt', attempt);
+        dispatchUpload(data, submissionId);
       } else {
-        console.warn('[CodeInsight] Extraction failed after max retries.');
+        scheduleRetry(slug, submissionId, attempt + 1);
       }
-      return;
-    }
-    dispatchUpload(data, submissionId);
-  } catch (err) {
-    console.error('[CodeInsight] Unexpected extraction error:', err);
-  }
-}
-
-// ─── Extraction ─────────────────────────────────────────────────────────────────────────────
-
-function extractSubmissionData(problemSlug, submissionId) {
-  const title   = extractTitle(problemSlug);
-  if (!title) return null;
-  const verdict = extractVerdict();
-  if (!verdict) return null;
-  const language = extractLanguage();
-  if (!language) return null;
-  const code = extractCode();
-  if (!code || code.trim().length < 5) return null;
-
-  return {
-    problemSlug,
-    submissionId,
-    title,
-    verdict:     normaliseVerdict(verdict),
-    language:    normaliseLanguage(language),
-    code,
-    submittedAt: new Date().toISOString(),
-  };
-}
-
-function extractTitle(slug) {
-  const titleEl = document.querySelector('title');
-  if (titleEl?.textContent) {
-    const raw      = titleEl.textContent.trim();
-    const stripped = raw.replace(/\s*-\s*LeetCode.*$/i, '').trim();
-    if (stripped.length > 0 && stripped !== 'LeetCode') return stripped;
-  }
-  const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
-  if (ogTitle) return ogTitle.replace(/\s*-\s*LeetCode.*$/i, '').trim();
-  return slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
-}
-
-function extractVerdict() {
-  // Primary: data-e2e-locator (present in both old and new LC layouts)
-  const el = document.querySelector('[data-e2e-locator="submission-result"]');
-  if (el?.textContent?.trim()) return el.textContent.trim();
-
-  // Secondary: colour-coded result text elements
-  for (const sel of ['.text-green-s', '.text-red-s', '[class*="result-state"]', '[class*="status-"]']) {
-    const found = document.querySelector(sel);
-    if (found?.textContent?.trim()) return found.textContent.trim();
+    }, RETRY_BASE_MS * Math.pow(RETRY_BACKOFF, attempt));
   }
 
-  // Tertiary: body text scan
-  const KNOWN = ['Accepted','Wrong Answer','Time Limit Exceeded','Memory Limit Exceeded','Runtime Error','Compile Error','Output Limit Exceeded'];
-  const body = document.body.innerText;
-  for (const v of KNOWN) { if (body.includes(v)) return v; }
-
-  return null;
-}
-
-function extractLanguage() {
-  for (const sel of ['[data-e2e-locator="submission-lang"]','button[id*="lang"]','[class*="lang-select"]']) {
-    const el = document.querySelector(sel);
-    if (el?.textContent?.trim()) return el.textContent.trim();
+  function extractSubmissionDataFromDom(slug, submissionId) {
+    var title = extractTitle(slug), verdict = extractVerdictFromDom(),
+        lang  = extractLanguageFromDom(), code = extractCodeFromDom();
+    if (!title || !verdict || !lang || !code || code.trim().length < 5) return null;
+    return {
+      problemSlug: slug, submissionId: String(submissionId), title: title,
+      verdict: normaliseVerdictString(verdict), language: normaliseLanguage(lang),
+      code: code, submittedAt: new Date().toISOString(),
+    };
   }
 
-  // New LC: language shown in the result panel header
-  const resultHeader = document.querySelector('[class*="ResultHeader"]');
-  if (resultHeader?.textContent) {
-    const langs = ['Python3','Python','C++','Java','JavaScript','TypeScript','Go','Rust','C#','C','Swift','Kotlin','Scala','Ruby','PHP'];
-    for (const l of langs) { if (resultHeader.textContent.includes(l)) return l; }
+  // ─── Upload dispatcher ───────────────────────────────────────────────────────
+  function dispatchUpload(data, submissionId) {
+    if (uploadedIds[submissionId]) return;
+    uploadedIds[submissionId] = true;
+    delete pendingSlugBySubmission[submissionId];
+    delete lastStatusCodeSeen[submissionId];
+    console.log('[CodeInsight] → upload dispatched:',
+      data.verdict, data.language, data.code.length + 'ch', submissionId);
+    window.postMessage({ __ci: true, payload: JSON.parse(JSON.stringify(data)) }, '*');
   }
 
-  const nextData = getNextData();
-  if (nextData) {
-    const lang = nextData?.props?.pageProps?.submissionData?.lang ||
-                 nextData?.props?.pageProps?.lang ||
-                 nextData?.query?.lang;
-    if (lang) return lang;
+  // ─── DOM helpers ─────────────────────────────────────────────────────────────
+  function extractSlugFromUrl() {
+    var m = /\/problems\/([^/]+)/.exec(location.pathname); return m ? m[1] : null;
   }
 
-  return null;
-}
-
-function extractCode() {
-  // A: __NEXT_DATA__
-  const nextData = getNextData();
-  if (nextData) {
-    const code = nextData?.props?.pageProps?.submissionData?.code ||
-                 nextData?.props?.pageProps?.code ||
-                 nextData?.query?.submissionData?.code;
-    if (code && code.trim().length > 5) return code;
+  function extractTitle(slug) {
+    var t = document.querySelector('title');
+    if (t && t.textContent) { var c = t.textContent.replace(/\s*[-|].*LeetCode.*$/i,'').trim(); if (c && c !== 'LeetCode') return c; }
+    var og = document.querySelector('meta[property="og:title"]');
+    if (og && og.content) return og.content.replace(/\s*[-|].*LeetCode.*$/i,'').trim();
+    return slug.split('-').map(function(w){return w[0].toUpperCase()+w.slice(1);}).join(' ');
   }
 
-  // B: React fiber walk
-  const reactCode = extractFromReactFiber();
-  if (reactCode) return reactCode;
-
-  // C: CodeMirror / Monaco DOM
-  const cmCode = extractFromCodeMirror();
-  if (cmCode) return cmCode;
-
-  const monacoCode = extractFromMonaco();
-  if (monacoCode) return monacoCode;
-
-  return null;
-}
-
-let _nextDataCache = undefined;
-function resetNextDataCache() { _nextDataCache = undefined; }
-function getNextData() {
-  if (_nextDataCache !== undefined) return _nextDataCache;
-  try {
-    const el = document.getElementById('__NEXT_DATA__');
-    _nextDataCache = el ? JSON.parse(el.textContent) : null;
-  } catch { _nextDataCache = null; }
-  return _nextDataCache;
-}
-
-function extractFromReactFiber() {
-  try {
-    const root = document.getElementById('__next') || document.getElementById('app');
-    if (!root) return null;
-    const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
-    if (!fiberKey) return null;
-    const stack = [root[fiberKey]];
-    let visited = 0;
-    while (stack.length > 0 && visited < 2000) {
-      const fiber = stack.pop(); visited++;
-      if (!fiber) continue;
-      const props = fiber.memoizedProps || fiber.pendingProps;
-      if (props?.submissionData?.code) return props.submissionData.code;
-      if (props?.code && typeof props.code === 'string' && props.code.length > 20) {
-        if (props.code.includes('\n') || props.code.includes(';') || props.code.includes('{')) return props.code;
-      }
-      if (fiber.sibling) stack.push(fiber.sibling);
-      if (fiber.child)   stack.push(fiber.child);
-    }
-  } catch {}
-  return null;
-}
-
-function extractFromCodeMirror() {
-  try {
-    const lines = document.querySelectorAll('.CodeMirror-line, .cm-line');
-    if (lines.length === 0) return null;
-    return Array.from(lines).map(l => l.textContent).join('\n');
-  } catch { return null; }
-}
-
-function extractFromMonaco() {
-  try {
-    const lines = document.querySelectorAll('.view-line');
-    if (lines.length === 0) return null;
-    console.warn('[CodeInsight] Monaco DOM fallback — code may differ from actual submission.');
-    return Array.from(lines).map(l => l.textContent).join('\n');
-  } catch { return null; }
-}
-
-// ─── Normalisation ─────────────────────────────────────────────────────────────────────────────
-
-function normaliseVerdict(raw) {
-  const s = raw.toLowerCase();
-  if (s.includes('accepted')) return 'Accepted';
-  if (s.includes('wrong'))    return 'Wrong Answer';
-  if (s.includes('time limit'))   return 'TLE';
-  if (s.includes('memory limit')) return 'MLE';
-  if (s.includes('output limit')) return 'MLE';
-  if (s.includes('runtime'))  return 'RE';
-  if (s.includes('compile'))  return 'CE';
-  console.warn('[CodeInsight] Unrecognised verdict:', raw);
-  return 'Pending';
-}
-
-function normaliseLanguage(raw) {
-  const s = raw.toLowerCase().trim();
-  const MAP = {
-    'c++':'cpp','cpp':'cpp','java':'java',
-    'python':'python3','python3':'python3',
-    'c#':'csharp','csharp':'csharp',
-    'javascript':'javascript','js':'javascript',
-    'typescript':'typescript','ts':'typescript',
-    'go':'golang','golang':'golang',
-    'rust':'rust','kotlin':'kotlin','swift':'swift',
-    'scala':'scala','ruby':'ruby','php':'php','c':'c',
-  };
-  for (const [key, val] of Object.entries(MAP)) { if (s.includes(key)) return val; }
-  return s;
-}
-
-
-// // ─── Constants ────────────────────────────────────────────────────────────────
-
-// /** Submission result URL pattern: /problems/<slug>/submissions/<id>/ */
-// const SUBMISSION_URL_RE = /\/problems\/([^/]+)\/submissions\/(\d+)\/?/;
-
-// /** Maximum retries when the DOM hasn't fully rendered yet (fallback path). */
-// const MAX_EXTRACTION_RETRIES = 6;
-
-// /** Delay between retries (exponential back-off base). */
-// const RETRY_BASE_MS = 800;
-
-// /**
-//  * How long the MutationObserver waits before giving up and handing off to
-//  * the timed retry loop. 15 s covers even very slow connections.
-//  */
-// const OBSERVER_TIMEOUT_MS = 15_000;
-
-// /**
-//  * Quick-check delay after URL change: attempt extraction immediately on a
-//  * cached/fast page before the observer fires.
-//  */
-// const QUICK_CHECK_MS = 500;
-
-// // ─── Session-level deduplication ─────────────────────────────────────────────
-// // Persists for the lifetime of the tab. Prevents double-sends when the user
-// // refreshes or the MutationObserver fires multiple times for the same URL.
-// const uploadedSubmissionIds = new Set();
-
-// // ─── SPA Navigation Detection ─────────────────────────────────────────────────
-// // LeetCode is a React SPA: full page reloads are rare. We intercept history API
-// // calls and also watch for popstate to cover back/forward navigation.
-
-// let currentUrl = location.href;
-
-// /**
-//  * FIX BUG-EXT-003: Replace flat setTimeout with MutationObserver fast-path.
-//  *
-//  * Three-tier strategy:
-//  *  Tier 1 — 500 ms quick-check: works on cached/instant renders.
-//  *  Tier 2 — MutationObserver: fires as soon as the verdict element appears in
-//  *            the DOM, regardless of how long that takes.
-//  *  Tier 3 — 15 s hard timeout: disconnects the observer and falls back to the
-//  *            exponential-backoff retry loop (extractAndUpload) as before.
-//  */
-// function onUrlChange(newUrl) {
-//   const match = SUBMISSION_URL_RE.exec(newUrl);
-//   if (!match) return;
-
-//   const problemSlug = match[1];
-//   const submissionId = match[2];
-
-//   if (uploadedSubmissionIds.has(submissionId)) {
-//     console.debug('[CodeInsight] Already uploaded submissionId:', submissionId);
-//     return;
-//   }
-
-//   console.log('[CodeInsight] Submission page detected. slug:', problemSlug, 'id:', submissionId);
-
-//   // Reset __NEXT_DATA__ cache so stale data from a prior page is never reused.
-//   resetNextDataCache();
-
-//   let resolved = false;
-
-//   // ── Tier 2: MutationObserver ───────────────────────────────────────────────
-//   const observer = new MutationObserver(() => {
-//     if (resolved) return;
-//     const data = extractSubmissionData(problemSlug, submissionId);
-//     if (data) {
-//       resolved = true;
-//       observer.disconnect();
-//       dispatchUpload(data, submissionId);
-//     }
-//   });
-//   observer.observe(document.body, { childList: true, subtree: true });
-
-//   // ── Tier 1: Quick-check after 500 ms (handles fast/cached renders) ─────────
-//   setTimeout(() => {
-//     if (resolved) return;
-//     const data = extractSubmissionData(problemSlug, submissionId);
-//     if (data) {
-//       resolved = true;
-//       observer.disconnect();
-//       dispatchUpload(data, submissionId);
-//     }
-//   }, QUICK_CHECK_MS);
-
-//   // ── Tier 3: Hard timeout — hand off to retry loop ──────────────────────────
-//   setTimeout(() => {
-//     if (resolved) return;
-//     observer.disconnect();
-//     // Only proceed if still not uploaded (guard against racing quick-check)
-//     if (!uploadedSubmissionIds.has(submissionId)) {
-//       console.debug('[CodeInsight] Observer timed out, falling back to retry loop.');
-//       extractAndUpload(problemSlug, submissionId, 0);
-//     }
-//   }, OBSERVER_TIMEOUT_MS);
-// }
-
-// /**
-//  * Send a successfully extracted payload to the background worker.
-//  * Marks the submissionId as seen first so that concurrent observer fires
-//  * (possible if MutationObserver fires multiple times) do not double-send.
-//  */
-// function dispatchUpload(data, submissionId) {
-//   uploadedSubmissionIds.add(submissionId);
-//   console.log('[CodeInsight] Dispatching upload:', data.verdict, data.language, `${data.code.length} chars`);
-
-//   chrome.runtime.sendMessage({ type: 'UPLOAD_SUBMISSION', payload: data }, (response) => {
-//     if (chrome.runtime.lastError) {
-//       console.error('[CodeInsight] Message error:', chrome.runtime.lastError.message);
-//       uploadedSubmissionIds.delete(submissionId);
-//       return;
-//     }
-//     if (response?.success) {
-//       console.log('[CodeInsight] Upload confirmed by background worker.');
-//     } else {
-//       console.warn('[CodeInsight] Background worker reported failure:', response?.error);
-//       uploadedSubmissionIds.delete(submissionId);
-//     }
-//   });
-// }
-
-// // Monkey-patch history.pushState and replaceState
-// (function patchHistory() {
-//   const _push = history.pushState.bind(history);
-//   const _replace = history.replaceState.bind(history);
-
-//   history.pushState = function (...args) {
-//     _push(...args);
-//     const newUrl = location.href;
-//     if (newUrl !== currentUrl) {
-//       currentUrl = newUrl;
-//       onUrlChange(newUrl);
-//     }
-//   };
-
-//   history.replaceState = function (...args) {
-//     _replace(...args);
-//     const newUrl = location.href;
-//     if (newUrl !== currentUrl) {
-//       currentUrl = newUrl;
-//       onUrlChange(newUrl);
-//     }
-//   };
-// })();
-
-// window.addEventListener('popstate', () => {
-//   const newUrl = location.href;
-//   if (newUrl !== currentUrl) {
-//     currentUrl = newUrl;
-//     onUrlChange(newUrl);
-//   }
-// });
-
-// // Handle the initial page load (user navigated directly to a result URL)
-// onUrlChange(location.href);
-
-// // ─── Extraction Orchestrator (fallback retry loop) ────────────────────────────
-
-// /**
-//  * Fallback when the MutationObserver times out. Retries with exponential
-//  * back-off until the DOM is ready or MAX_EXTRACTION_RETRIES is reached.
-//  *
-//  * @param {string} problemSlug
-//  * @param {string} submissionId
-//  * @param {number} attempt - current retry count (0-indexed)
-//  */
-// async function extractAndUpload(problemSlug, submissionId, attempt) {
-//   try {
-//     const data = extractSubmissionData(problemSlug, submissionId);
-
-//     if (!data) {
-//       if (attempt < MAX_EXTRACTION_RETRIES) {
-//         const delay = RETRY_BASE_MS * Math.pow(1.6, attempt);
-//         console.debug(`[CodeInsight] DOM not ready, retry ${attempt + 1} in ${Math.round(delay)}ms`);
-//         setTimeout(() => extractAndUpload(problemSlug, submissionId, attempt + 1), delay);
-//       } else {
-//         console.warn('[CodeInsight] Extraction failed after max retries. Giving up.');
-//       }
-//       return;
-//     }
-
-//     dispatchUpload(data, submissionId);
-//   } catch (err) {
-//     console.error('[CodeInsight] Unexpected extraction error:', err);
-//   }
-// }
-
-// // ─── DOM Extraction ───────────────────────────────────────────────────────────
-
-// /**
-//  * Primary extraction function. Returns a structured payload or null if the
-//  * page hasn't rendered yet.
-//  *
-//  * @param {string} problemSlug  - from URL
-//  * @param {string} submissionId - from URL
-//  * @returns {object|null}
-//  */
-// function extractSubmissionData(problemSlug, submissionId) {
-//   // ── 1. Problem title ───────────────────────────────────────────────────────
-//   const title = extractTitle(problemSlug);
-//   if (!title) return null;
-
-//   // ── 2. Verdict ─────────────────────────────────────────────────────────────
-//   const verdict = extractVerdict();
-//   if (!verdict) return null;
-
-//   // ── 3. Language ────────────────────────────────────────────────────────────
-//   const language = extractLanguage();
-//   if (!language) return null;
-
-//   // ── 4. Source code ─────────────────────────────────────────────────────────
-//   const code = extractCode();
-//   if (!code || code.trim().length < 5) return null;
-
-//   return {
-//     problemSlug,
-//     submissionId,
-//     title,
-//     verdict: normaliseVerdict(verdict),
-//     language: normaliseLanguage(language),
-//     code,
-//     submittedAt: new Date().toISOString(),
-//   };
-// }
-
-// // ── Title ─────────────────────────────────────────────────────────────────────
-// function extractTitle(slug) {
-//   const titleEl = document.querySelector('title');
-//   if (titleEl?.textContent) {
-//     const raw = titleEl.textContent.trim();
-//     const stripped = raw.replace(/\s*-\s*LeetCode.*$/i, '').trim();
-//     if (stripped.length > 0 && stripped !== 'LeetCode') return stripped;
-//   }
-//   const ogTitle = document.querySelector('meta[property="og:title"]')?.content;
-//   if (ogTitle) return ogTitle.replace(/\s*-\s*LeetCode.*$/i, '').trim();
-//   return slug.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
-// }
-
-// // ── Verdict ───────────────────────────────────────────────────────────────────
-// function extractVerdict() {
-//   const VERDICT_SELECTORS = [
-//     '[data-e2e-locator="submission-result"]',
-//     '.text-green-s',
-//     '.text-red-s',
-//     '[class*="result-state"]',
-//     '[class*="status-accepted"]',
-//     '[class*="status-wrong"]',
-//   ];
-
-//   for (const sel of VERDICT_SELECTORS) {
-//     const el = document.querySelector(sel);
-//     if (el?.textContent?.trim()) {
-//       return el.textContent.trim();
-//     }
-//   }
-
-//   const KNOWN_VERDICTS = [
-//     'Accepted', 'Wrong Answer', 'Time Limit Exceeded',
-//     'Memory Limit Exceeded', 'Runtime Error', 'Compile Error',
-//     'Output Limit Exceeded',
-//   ];
-//   const bodyText = document.body.innerText;
-//   for (const v of KNOWN_VERDICTS) {
-//     if (bodyText.includes(v)) return v;
-//   }
-
-//   return null;
-// }
-
-// // ── Language ──────────────────────────────────────────────────────────────────
-// function extractLanguage() {
-//   const LANG_SELECTORS = [
-//     '[data-e2e-locator="submission-lang"]',
-//     'button[id*="lang"]',
-//     '[class*="lang-select"]',
-//   ];
-
-//   for (const sel of LANG_SELECTORS) {
-//     const el = document.querySelector(sel);
-//     if (el?.textContent?.trim()) return el.textContent.trim();
-//   }
-
-//   const nextData = getNextData();
-//   if (nextData) {
-//     const lang =
-//       nextData?.props?.pageProps?.submissionData?.lang ||
-//       nextData?.props?.pageProps?.lang ||
-//       nextData?.query?.lang;
-//     if (lang) return lang;
-//   }
-
-//   return null;
-// }
-
-// // ── Code Extraction ───────────────────────────────────────────────────────────
-// function extractCode() {
-//   // Strategy A: __NEXT_DATA__ (most reliable — server-rendered JSON)
-//   const nextData = getNextData();
-//   if (nextData) {
-//     const code =
-//       nextData?.props?.pageProps?.submissionData?.code ||
-//       nextData?.props?.pageProps?.code ||
-//       nextData?.query?.submissionData?.code;
-//     if (code && code.trim().length > 5) return code;
-//   }
-
-//   // Strategy B: React fiber (walks component tree for submissionData.code prop)
-//   const reactCode = extractFromReactFiber();
-//   if (reactCode) return reactCode;
-
-//   // Strategy C: CodeMirror DOM (reads rendered editor lines)
-//   const cmCode = extractFromCodeMirror();
-//   if (cmCode) return cmCode;
-
-//   // Strategy D: Monaco editor (last resort — may capture post-submit editor edits)
-//   const monacoCode = extractFromMonaco();
-//   if (monacoCode) return monacoCode;
-
-//   return null;
-// }
-
-// /**
-//  * Cache with a per-navigation sentinel.
-//  * Reset by calling resetNextDataCache() on each new URL.
-//  */
-// let _nextDataCache = undefined;
-
-// function resetNextDataCache() {
-//   _nextDataCache = undefined;
-// }
-
-// function getNextData() {
-//   if (_nextDataCache !== undefined) return _nextDataCache;
-//   try {
-//     const el = document.getElementById('__NEXT_DATA__');
-//     _nextDataCache = el ? JSON.parse(el.textContent) : null;
-//   } catch {
-//     _nextDataCache = null;
-//   }
-//   return _nextDataCache;
-// }
-
-// /**
-//  * FIX BUG-EXT-002: Replaced broken while-loop traversal that used
-//  * `fiber.child || fiber.sibling || fiber?.return?.sibling`.
-//  * That pattern skipped entire subtrees because return.sibling jumps UP then
-//  * sideways without exhausting the current node's subtree first.
-//  *
-//  * Replacement: standard iterative pre-order DFS with an explicit LIFO stack.
-//  * Sibling is pushed before child so child is processed first (stack is LIFO).
-//  * Hard cap of 2000 nodes prevents infinite loops on malformed fiber trees.
-//  */
-// function extractFromReactFiber() {
-//   try {
-//     const root = document.getElementById('__next') || document.getElementById('app');
-//     if (!root) return null;
-
-//     const fiberKey = Object.keys(root).find(k =>
-//       k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance')
-//     );
-//     if (!fiberKey) return null;
-
-//     const stack = [root[fiberKey]];
-//     let visited = 0;
-//     const MAX_NODES = 2000;
-
-//     while (stack.length > 0 && visited < MAX_NODES) {
-//       const fiber = stack.pop();
-//       visited++;
-//       if (!fiber) continue;
-
-//       const props = fiber.memoizedProps || fiber.pendingProps;
-//       if (props?.submissionData?.code) return props.submissionData.code;
-//       if (props?.code && typeof props.code === 'string' && props.code.length > 20) {
-//         if (props.code.includes('\n') || props.code.includes(';') || props.code.includes('{')) {
-//           return props.code;
-//         }
-//       }
-
-//       // Push sibling first (processed later), child second (processed next — LIFO)
-//       if (fiber.sibling) stack.push(fiber.sibling);
-//       if (fiber.child)   stack.push(fiber.child);
-//     }
-//   } catch {
-//     // Fiber walk is opportunistic — never throw
-//   }
-//   return null;
-// }
-
-// function extractFromCodeMirror() {
-//   try {
-//     const lines = document.querySelectorAll('.CodeMirror-line, .cm-line');
-//     if (lines.length === 0) return null;
-//     return Array.from(lines).map(l => l.textContent).join('\n');
-//   } catch {
-//     return null;
-//   }
-// }
-
-// /**
-//  * FIX BUG-EXT-004: Added warning that Monaco fallback reads the visible editor
-//  * DOM, which reflects whatever is currently in the editor — not necessarily the
-//  * code that was submitted if the user edited the editor after submitting.
-//  * This is a last-resort fallback; strategies A/B/C should succeed first.
-//  */
-// function extractFromMonaco() {
-//   try {
-//     const lines = document.querySelectorAll('.view-line');
-//     if (lines.length === 0) return null;
-//     console.warn(
-//       '[CodeInsight] Using Monaco DOM fallback — code may differ from actual submission ' +
-//       'if the editor was modified after submitting. Strategies A/B/C all failed.'
-//     );
-//     return Array.from(lines).map(l => l.textContent).join('\n');
-//   } catch {
-//     return null;
-//   }
-// }
-
-// // ─── Normalisation Helpers ────────────────────────────────────────────────────
-
-// /**
-//  * FIX BUG-EXT-005: Unknown verdict strings are now logged as a warning instead
-//  * of silently mapping to 'Pending'. 'Output Limit Exceeded' (which was already
-//  * in KNOWN_VERDICTS but not in the map) now correctly maps to 'MLE' (closest
-//  * semantic match — output size exceeded = effectively a limit exceeded verdict).
-//  */
-// function normaliseVerdict(raw) {
-//   const s = raw.toLowerCase();
-//   if (s.includes('accepted')) return 'Accepted';
-//   if (s.includes('wrong')) return 'Wrong Answer';
-//   if (s.includes('time limit')) return 'TLE';
-//   if (s.includes('memory limit')) return 'MLE';
-//   if (s.includes('output limit')) return 'MLE';
-//   if (s.includes('runtime')) return 'RE';
-//   if (s.includes('compile')) return 'CE';
-//   // Surface unknown verdicts so they can be added to the map in a future update
-//   console.warn('[CodeInsight] Unrecognised verdict string:', raw, '— mapping to Pending');
-//   return 'Pending';
-// }
-
-// function normaliseLanguage(raw) {
-//   const s = raw.toLowerCase().trim();
-//   const MAP = {
-//     'c++': 'cpp', 'cpp': 'cpp',
-//     'java': 'java',
-//     'python': 'python3', 'python3': 'python3',
-//     'c': 'c',
-//     'c#': 'csharp', 'csharp': 'csharp',
-//     'javascript': 'javascript', 'js': 'javascript',
-//     'typescript': 'typescript', 'ts': 'typescript',
-//     'go': 'golang', 'golang': 'golang',
-//     'rust': 'rust',
-//     'kotlin': 'kotlin',
-//     'swift': 'swift',
-//     'scala': 'scala',
-//     'ruby': 'ruby',
-//     'php': 'php',
-//   };
-//   for (const [key, val] of Object.entries(MAP)) {
-//     if (s.includes(key)) return val;
-//   }
-//   return s;
-// }
+  function extractVerdictFromDom() {
+    var ss = ['[data-e2e-locator="submission-result"]','.text-green-s','.text-red-s','[class*="result-state"]','[class*="status-"]','[class*="ResultHeader"]'];
+    for (var i=0;i<ss.length;i++){var el=document.querySelector(ss[i]);if(el&&el.textContent&&el.textContent.trim())return el.textContent.trim();}
+    var KN=['Accepted','Wrong Answer','Time Limit Exceeded','Memory Limit Exceeded','Runtime Error','Compile Error','Output Limit Exceeded'];
+    var b=document.body&&document.body.innerText;
+    if(b)for(var j=0;j<KN.length;j++)if(b.indexOf(KN[j])!==-1)return KN[j];
+    return null;
+  }
+
+  function extractLanguageFromDom() {
+    var ss=['[data-e2e-locator="submission-lang"]','button[id*="lang"]','[class*="lang-select"]','[class*="LanguageButton"]'];
+    for(var i=0;i<ss.length;i++){var el=document.querySelector(ss[i]);if(el&&el.textContent&&el.textContent.trim())return el.textContent.trim();}
+    var h=document.querySelector('[class*="ResultHeader"],[class*="result-header"]');
+    if(h&&h.textContent){var LS=['Python3','Python','C++','Java','JavaScript','TypeScript','Go','Rust','C#','C','Swift','Kotlin','Scala','Ruby','PHP'];for(var k=0;k<LS.length;k++)if(h.textContent.indexOf(LS[k])!==-1)return LS[k];}
+    var nd=getNextData();
+    if(nd){var l=(nd.props&&nd.props.pageProps&&(nd.props.pageProps.lang||(nd.props.pageProps.submissionData&&nd.props.pageProps.submissionData.lang)))||(nd.query&&nd.query.lang);if(l)return l;}
+    return null;
+  }
+
+  function extractCodeFromDom() {
+    var nd=getNextData();
+    if(nd){var c=(nd.props&&nd.props.pageProps&&((nd.props.pageProps.submissionData&&nd.props.pageProps.submissionData.code)||nd.props.pageProps.code))||(nd.query&&nd.query.submissionData&&nd.query.submissionData.code);if(c&&c.trim().length>5)return c;}
+    var fc=extractFromFiber(); if(fc)return fc;
+    var cm=document.querySelectorAll('.CodeMirror-line,.cm-line');
+    if(cm.length)return Array.prototype.map.call(cm,function(l){return l.textContent;}).join('\n');
+    var mv=document.querySelectorAll('.view-line');
+    if(mv.length){console.warn('[CodeInsight] Monaco DOM fallback');return Array.prototype.map.call(mv,function(l){return l.textContent;}).join('\n');}
+    return null;
+  }
+
+  var _nextCache;
+  function resetNextDataCache(){_nextCache=undefined;}
+  function getNextData(){
+    if(_nextCache!==undefined)return _nextCache;
+    try{var el=document.getElementById('__NEXT_DATA__');_nextCache=el?JSON.parse(el.textContent):null;}
+    catch(_){_nextCache=null;}
+    return _nextCache;
+  }
+
+  function extractFromFiber(){
+    try{
+      var root=document.getElementById('__next')||document.getElementById('app'); if(!root)return null;
+      var fk=Object.keys(root).find(function(k){return k.indexOf('__reactFiber')===0||k.indexOf('__reactInternalInstance')===0||k.indexOf('__reactContainer')===0;});
+      if(!fk)return null;
+      var stack=[root[fk]],n=0;
+      while(stack.length&&n++<2000){var f=stack.pop();if(!f)continue;var p=f.memoizedProps||f.pendingProps;
+        if(p&&p.submissionData&&p.submissionData.code)return p.submissionData.code;
+        if(p&&p.code&&typeof p.code==='string'&&p.code.length>20&&(p.code.indexOf('\n')!==-1||p.code.indexOf(';')!==-1||p.code.indexOf('{')!==-1))return p.code;
+        if(f.sibling)stack.push(f.sibling);if(f.child)stack.push(f.child);}
+    }catch(_){}
+    return null;
+  }
+
+  function normaliseVerdictString(raw){
+    var s=raw.toLowerCase();
+    if(s.indexOf('accepted')!==-1)return 'Accepted';
+    if(s.indexOf('wrong')!==-1)return 'Wrong Answer';
+    if(s.indexOf('time limit')!==-1)return 'TLE';
+    if(s.indexOf('memory limit')!==-1)return 'MLE';
+    if(s.indexOf('output limit')!==-1)return 'MLE';
+    if(s.indexOf('runtime')!==-1)return 'RE';
+    if(s.indexOf('compile')!==-1)return 'CE';
+    console.warn('[CodeInsight] Unknown verdict:',raw); return 'Pending';
+  }
+
+  function normaliseLanguage(raw){
+    var s=raw.toLowerCase().trim();
+    var M=[['c++','cpp'],['cpp','cpp'],['python3','python3'],['python','python3'],['javascript','javascript'],['typescript','typescript'],['java','java'],['c#','csharp'],['csharp','csharp'],['golang','golang'],['go','golang'],['rust','rust'],['kotlin','kotlin'],['swift','swift'],['scala','scala'],['ruby','ruby'],['php','php'],['dart','dart'],['elixir','elixir'],['erlang','erlang'],['racket','racket'],['bash','bash'],['mysql','mysql'],['mssql','mssql'],['postgresql','postgresql'],['c','c']];
+    for(var i=0;i<M.length;i++)if(s.indexOf(M[i][0])!==-1)return M[i][1];
+    return s;
+  }
+
+})();

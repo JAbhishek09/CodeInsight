@@ -18,6 +18,7 @@ import {
   importLeetcodeProblems,
   importLeetcodeCode,
   backfillMissingCode,
+  getCodeCoverageStatus,
 } from '../controllers/import.controller.js';
 import rateLimit from 'express-rate-limit';
 
@@ -47,5 +48,8 @@ const backfillLimiter = rateLimit({
 router.post('/leetcode/problems', protect, problemsImportLimiter, importLeetcodeProblems);
 router.post('/leetcode/code',     protect, codeImportLimiter,     importLeetcodeCode);
 router.post('/leetcode/backfill', protect, backfillLimiter,       backfillMissingCode);
+
+// Live code-coverage status — no rate limit needed, cheap aggregation, read-only.
+router.get('/leetcode/code-status', protect, getCodeCoverageStatus);
 
 export default router;

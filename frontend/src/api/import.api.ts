@@ -35,3 +35,16 @@ export const backfillLeetcodeCode = async (sessionCookie: string, skip = 0, limi
   return res.data;
   // Returns: { processed, backfilled, hasMore, nextSkip, message }
 };
+
+/**
+ * Live code-coverage status — computed from actual submission data in MongoDB,
+ * not the static historyImportStatus enum on the User document. Reflects code
+ * written by the Chrome extension's live sync as well as any import passes.
+ *
+ * Returns: { totalProblems, acceptedSubmissions, acceptedWithCode, missingCode,
+ *            status: 'none' | 'partial' | 'mixed' | 'full' }
+ */
+export const getCodeCoverageStatus = async () => {
+  const res = await api.get('/import/leetcode/code-status');
+  return res.data;
+};
