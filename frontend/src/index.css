@@ -1,15 +1,379 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/* ─── Font setup ──────────────────────────────────────────────────────────── */
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: #0c0f16;
-  color: #f3f4f6;
-  overflow-x: hidden;
+/* ─── Dark mode tokens (default) ─────────────────────────────────────────── */
+:root {
+  --ci-bg-root:       #07090e;
+  --ci-bg-card:       #0b0e14;
+  --ci-bg-surface:    #0f1117;
+  --ci-bg-elevated:   #13161e;
+  --ci-border:        rgba(148,163,184,0.08);   /* slate-400/8 */
+  --ci-border-strong: rgba(148,163,184,0.14);
+
+  --ci-text-primary:   #f1f5f9;
+  --ci-text-secondary: #94a3b8;
+  --ci-text-muted:     #475569;
+  --ci-text-faint:     #334155;
+
+  --ci-accent-pink:    #ec4899;
+  --ci-accent-purple:  #a855f7;
+  --ci-accent-cyan:    #22d3ee;
+  --ci-accent-emerald: #34d399;
+  --ci-accent-amber:   #fbbf24;
+  --ci-accent-rose:    #fb7185;
+  --ci-accent-indigo:  #818cf8;
+
+  --ci-nav-h: 56px;
+
+  color-scheme: dark;
 }
 
+/* ─── Light mode tokens ───────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  --ci-bg-root:       #f8fafc;
+  --ci-bg-card:       #ffffff;
+  --ci-bg-surface:    #f1f5f9;
+  --ci-bg-elevated:   #e2e8f0;
+  --ci-border:        rgba(15,23,42,0.08);
+  --ci-border-strong: rgba(15,23,42,0.14);
+
+  --ci-text-primary:   #0f172a;
+  --ci-text-secondary: #475569;
+  --ci-text-muted:     #94a3b8;
+  --ci-text-faint:     #cbd5e1;
+
+  /* accents stay vibrant but slightly richer for light bg */
+  --ci-accent-pink:    #db2777;
+  --ci-accent-purple:  #9333ea;
+  --ci-accent-cyan:    #0891b2;
+  --ci-accent-emerald: #059669;
+  --ci-accent-amber:   #d97706;
+  --ci-accent-rose:    #e11d48;
+  --ci-accent-indigo:  #4f46e5;
+
+  color-scheme: light;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--ci-bg-root);
+  color: var(--ci-text-primary);
+  overflow-x: hidden;
+  min-height: 100vh;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Scrollbar (dark) ────────────────────────────────────────────────────── */
+:root:not([data-theme="light"]) {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+:root:not([data-theme="light"]) ::-webkit-scrollbar { width: 6px; height: 6px; }
+:root:not([data-theme="light"]) ::-webkit-scrollbar-track { background: transparent; }
+:root:not([data-theme="light"]) ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+:root:not([data-theme="light"]) ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* ─── Scrollbar (light) ───────────────────────────────────────────────────── */
+:root[data-theme="light"] {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+:root[data-theme="light"] ::-webkit-scrollbar { width: 6px; height: 6px; }
+:root[data-theme="light"] ::-webkit-scrollbar-track { background: transparent; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ─── Theme-aware utility classes ─────────────────────────────────────────── */
+.bg-app       { background-color: var(--ci-bg-root); }
+.bg-card      { background-color: var(--ci-bg-card); }
+.bg-surface   { background-color: var(--ci-bg-surface); }
+.bg-elevated  { background-color: var(--ci-bg-elevated); }
+.border-soft  { border-color: var(--ci-border); }
+.border-med   { border-color: var(--ci-border-strong); }
+.text-primary   { color: var(--ci-text-primary); }
+.text-secondary { color: var(--ci-text-secondary); }
+.text-muted     { color: var(--ci-text-muted); }
+.text-faint     { color: var(--ci-text-faint); }
+
+/* ─── Card — main reusable panel atom ─────────────────────────────────────── */
+.ci-card {
+  background-color: var(--ci-bg-card);
+  border: 1px solid var(--ci-border);
+  border-radius: 1rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ci-card:hover {
+  border-color: var(--ci-border-strong);
+}
+:root[data-theme="light"] .ci-card {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+:root[data-theme="light"] .ci-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* ─── Gradient top bar (reused on cards/headers) ──────────────────────────── */
+.ci-gradient-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2.5px;
+  background: linear-gradient(to right, var(--ci-accent-pink), var(--ci-accent-purple), var(--ci-accent-indigo));
+  border-radius: 1rem 1rem 0 0;
+}
+
+/* ─── Navbar ──────────────────────────────────────────────────────────────── */
+.ci-navbar {
+  background-color: var(--ci-bg-card);
+  border-bottom: 1px solid var(--ci-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+:root:not([data-theme="light"]) .ci-navbar {
+  background-color: rgba(7,9,14,0.95);
+}
+:root[data-theme="light"] .ci-navbar {
+  background-color: rgba(255,255,255,0.92);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+}
+
+/* ─── Nav link active/hover states ───────────────────────────────────────── */
+.ci-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  border: 1px solid transparent;
+  color: var(--ci-text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+.ci-nav-link:hover {
+  color: var(--ci-text-primary);
+  background-color: var(--ci-bg-surface);
+}
+.ci-nav-link.active {
+  background-color: rgba(236,72,153,0.1);
+  color: var(--ci-accent-pink);
+  border-color: rgba(236,72,153,0.2);
+}
+:root[data-theme="light"] .ci-nav-link.active {
+  background-color: rgba(219,39,119,0.08);
+  color: var(--ci-accent-pink);
+  border-color: rgba(219,39,119,0.2);
+}
+
+/* ─── Button variants ─────────────────────────────────────────────────────── */
+.ci-btn-primary {
+  background: linear-gradient(135deg, var(--ci-accent-pink), var(--ci-accent-purple));
+  color: white;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.ci-btn-primary:hover { opacity: 0.9; }
+.ci-btn-primary:active { transform: scale(0.98); }
+
+.ci-btn-secondary {
+  background-color: var(--ci-bg-surface);
+  color: var(--ci-text-secondary);
+  border: 1px solid var(--ci-border);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+.ci-btn-secondary:hover {
+  background-color: var(--ci-bg-elevated);
+  color: var(--ci-text-primary);
+  border-color: var(--ci-border-strong);
+}
+
+/* ─── Theme toggle button ─────────────────────────────────────────────────── */
+.ci-theme-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--ci-border);
+  background-color: var(--ci-bg-surface);
+  color: var(--ci-text-secondary);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+.ci-theme-btn:hover {
+  background-color: var(--ci-bg-elevated);
+  color: var(--ci-text-primary);
+  border-color: var(--ci-border-strong);
+}
+
+/* ─── Input fields ────────────────────────────────────────────────────────── */
+.ci-input {
+  width: 100%;
+  background-color: var(--ci-bg-surface);
+  border: 1px solid var(--ci-border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--ci-text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.ci-input::placeholder { color: var(--ci-text-faint); }
+.ci-input:focus {
+  border-color: rgba(236,72,153,0.5);
+  box-shadow: 0 0 0 3px rgba(236,72,153,0.08);
+}
+:root[data-theme="light"] .ci-input {
+  background-color: #ffffff;
+  border-color: rgba(15,23,42,0.12);
+}
+:root[data-theme="light"] .ci-input:focus {
+  border-color: rgba(219,39,119,0.4);
+  box-shadow: 0 0 0 3px rgba(219,39,119,0.06);
+}
+
+/* ─── Select dropdowns ────────────────────────────────────────────────────── */
+.ci-select {
+  appearance: none;
+  background-color: var(--ci-bg-surface);
+  border: 1px solid var(--ci-border);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--ci-text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.ci-select:focus { border-color: rgba(236,72,153,0.5); }
+:root[data-theme="light"] .ci-select {
+  background-color: #ffffff;
+  border-color: rgba(15,23,42,0.12);
+}
+
+/* ─── Badge variants ──────────────────────────────────────────────────────── */
+.ci-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.ci-badge-easy   { background: rgba(52,211,153,0.12);  color: #34d399; border-color: rgba(52,211,153,0.2); }
+.ci-badge-medium { background: rgba(251,191,36,0.12);  color: #fbbf24; border-color: rgba(251,191,36,0.2); }
+.ci-badge-hard   { background: rgba(251,113,133,0.12); color: #fb7185; border-color: rgba(251,113,133,0.2); }
+:root[data-theme="light"] .ci-badge-easy   { background: rgba(5,150,105,0.1);   color: #059669; border-color: rgba(5,150,105,0.2); }
+:root[data-theme="light"] .ci-badge-medium { background: rgba(217,119,6,0.1);   color: #d97706; border-color: rgba(217,119,6,0.2); }
+:root[data-theme="light"] .ci-badge-hard   { background: rgba(225,29,72,0.1);   color: #e11d48; border-color: rgba(225,29,72,0.2); }
+
+/* ─── Skeleton shimmer ────────────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.ci-skeleton {
+  border-radius: 8px;
+  animation: shimmer 1.6s ease infinite;
+}
+:root:not([data-theme="light"]) .ci-skeleton {
+  background: linear-gradient(90deg, #0f1117 25%, #1a1f2e 50%, #0f1117 75%);
+  background-size: 200% 100%;
+}
+:root[data-theme="light"] .ci-skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+}
+
+/* ─── Difficulty ring (LeetCode style) ───────────────────────────────────── */
+.difficulty-ring { transition: stroke-dashoffset 0.7s cubic-bezier(0.4,0,0.2,1); }
+
+/* ─── Heatmap ─────────────────────────────────────────────────────────────── */
+.heatmap-cell { transition: opacity 0.15s; cursor: default; }
+.heatmap-cell:hover { opacity: 0.75; }
+
+/* ─── Smooth page transitions ─────────────────────────────────────────────── */
+.page-enter { animation: fadeSlideIn 0.2s ease forwards; }
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Code block overrides ────────────────────────────────────────────────── */
+:root[data-theme="light"] pre,
+:root[data-theme="light"] code {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+/* ─── Modal backdrop ──────────────────────────────────────────────────────── */
+.ci-backdrop {
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+}
+:root[data-theme="light"] .ci-backdrop {
+  background: rgba(15,23,42,0.4);
+}
+
+/* ─── Light mode card overrides for existing Tailwind classes ─────────────── */
+:root[data-theme="light"] .bg-\[\#07090e\],
+:root[data-theme="light"] .bg-\[\#07090e\]\/95 { background-color: rgba(255,255,255,0.95) !important; }
+
+:root[data-theme="light"] .bg-\[\#0b0e14\],
+:root[data-theme="light"] .bg-\[\#0b0e14\]\/90 { background-color: #ffffff !important; }
+
+:root[data-theme="light"] .bg-\[\#0f1117\],
+:root[data-theme="light"] .bg-\[\#090b10\]\/40 { background-color: #f8fafc !important; }
+
+:root[data-theme="light"] .bg-slate-950,
+:root[data-theme="light"] .bg-\[\#05070a\]      { background-color: #f1f5f9 !important; }
+
+:root[data-theme="light"] .border-slate-900  { border-color: rgba(15,23,42,0.1) !important; }
+:root[data-theme="light"] .border-slate-950  { border-color: rgba(15,23,42,0.06) !important; }
+:root[data-theme="light"] .border-slate-800  { border-color: rgba(15,23,42,0.14) !important; }
+
+:root[data-theme="light"] .text-slate-100    { color: #0f172a !important; }
+:root[data-theme="light"] .text-slate-200    { color: #1e293b !important; }
+:root[data-theme="light"] .text-slate-300    { color: #334155 !important; }
+:root[data-theme="light"] .text-slate-400    { color: #475569 !important; }
+:root[data-theme="light"] .text-slate-500    { color: #64748b !important; }
+:root[data-theme="light"] .text-slate-600    { color: #94a3b8 !important; }
+:root[data-theme="light"] .text-white        { color: #0f172a !important; }
+
+/* keep accent colours vivid on light */
+:root[data-theme="light"] .text-pink-400     { color: var(--ci-accent-pink) !important; }
+:root[data-theme="light"] .text-pink-300     { color: #be185d !important; }
+:root[data-theme="light"] .text-purple-400   { color: var(--ci-accent-purple) !important; }
+:root[data-theme="light"] .text-cyan-400     { color: var(--ci-accent-cyan) !important; }
+:root[data-theme="light"] .text-emerald-400  { color: var(--ci-accent-emerald) !important; }
+:root[data-theme="light"] .text-amber-400    { color: var(--ci-accent-amber) !important; }
+:root[data-theme="light"] .text-indigo-400   { color: var(--ci-accent-indigo) !important; }
+
+:root[data-theme="light"] .bg-slate-900,
+:root[data-theme="light"] .hover\:bg-slate-900:hover { background-color: #f1f5f9 !important; }
+:root[data-theme="light"] .bg-slate-900\/60           { background-color: rgba(241,245,249,0.8) !important; }
+:root[data-theme="light"] .hover\:bg-slate-800:hover  { background-color: #e2e8f0 !important; }

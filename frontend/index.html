@@ -4,11 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CodeInsight</title>
+    <meta name="description" content="Track, analyse, and master coding problems across LeetCode and Codeforces." />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
+
+    <!-- Preconnect for Google Fonts (loaded by index.css) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- FOCT (Flash Of incorrect Color Theme) prevention.
+         Runs synchronously before React mounts so the body never flashes
+         the wrong background color on load. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('ci_theme');
+          var theme  = stored === 'light' || stored === 'dark'
+            ? stored
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          document.documentElement.setAttribute('data-theme', theme);
+          // Immediately set background so there's zero flash
+          document.documentElement.style.background =
+            theme === 'light' ? '#f8fafc' : '#07090e';
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
-    <!-- Entry point is src/main.tsx, relative to this index.html at frontend/ -->
     <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>

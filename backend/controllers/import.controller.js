@@ -55,12 +55,16 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
           user: userId, platform: 'leetcode', platformProblemId: p.platformProblemId,
           title: p.title, url: p.link, status: 'Solved', submissions: [],
         },
-        // Always overwrite difficulty + tags — these are the ground-truth values
+        // Always overwrite difficulty + tags — these are the ground-truth values.
+        // NOTE: title/url must NOT appear here too — they're already covered by
+        // $setOnInsert above, and having the same path in both $set and
+        // $setOnInsert in one update causes MongoDB to throw "Updating the
+        // path 'title' would create a conflict at 'title'" on the INSERT
+        // branch of the upsert (new documents only — this is why it only
+        // surfaced for problems not yet in the database).
         $set: {
           difficulty: p.difficulty || 'Medium',
           ...(p.tags?.length ? { tags: p.tags } : {}),
-          title: p.title,
-          url: p.link,
         },
       },
       upsert: true,
@@ -298,7 +302,13 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
       console.warn(`[Import 1C] ✗ "${problem.platformProblemId}": ${err.message}`);
       skipped++;
     }
-    await new Promise(r => setTimeout(r, 350));
+    // Randomized delay (was a flat 350ms) so per-problem requests don't form
+    // a perfectly uniform cadence — the same WAF/bot-detection concern as
+    // Phase 1B's pagination loop, but here each iteration can already issue
+    // up to 3 LeetCode requests (REST + GraphQL list + submissionDetails).
+    const baseDelay = 500;
+    const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1);
+    await new Promise(r => setTimeout(r, baseDelay + jitter));
   }
 
   const processed = problems.length;

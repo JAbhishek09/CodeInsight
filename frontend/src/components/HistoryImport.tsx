@@ -88,10 +88,39 @@ export default function HistoryImport({
     setPhase('1b');
     let lastKey = '';          // '' = first page; subsequent pages use the cursor returned
     let fetched = 0, attached = 0, backfilled = 0, pages = 0;
+    let consecutiveAuthFailures = 0;
 
     while (!abortRef.current) {
       setCurrentOffset(pages); // repurpose to show page count in UI
-      const data = await importLeetcodeCode(session, lastKey);
+
+      let data;
+      try {
+        data = await importLeetcodeCode(session, lastKey);
+        consecutiveAuthFailures = 0; // reset on any success
+      } catch (err: any) {
+        const msg = err?.message || '';
+        const looksLikeAuthFailure = /expired|invalid|401|403/i.test(msg);
+
+        // KEY FIX: a 401/403 mid-run after many successful pages is very
+        // likely LeetCode's bot-detection reacting to request CADENCE, not
+        // an actually-expired cookie — the session worked moments ago.
+        // Back off hard and retry a few times before giving up and
+        // surfacing the "expired" error to the user.
+        if (looksLikeAuthFailure && consecutiveAuthFailures < 3) {
+          consecutiveAuthFailures += 1;
+          const backoffMs = 5000 * consecutiveAuthFailures; // 5s, 10s, 15s
+          console.warn(
+            `[Import 1B] Auth-like failure on page ${pages + 1} ` +
+            `(attempt ${consecutiveAuthFailures}/3) — likely rate-limit, ` +
+            `not real expiry. Backing off ${backoffMs}ms before retry.`
+          );
+          await new Promise(r => setTimeout(r, backoffMs));
+          continue; // retry the SAME lastKey, don't advance the cursor
+        }
+        // Either not an auth-shaped error, or we've retried 3 times already —
+        // surface it for real now.
+        throw err;
+      }
 
       fetched    += data.fetched    ?? 0;
       attached   += data.attached   ?? 0;
@@ -105,7 +134,15 @@ export default function HistoryImport({
 
       if (!data.hasMore) break;
       lastKey = data.nextKey ?? '';  // use cursor for next page
-      await new Promise(r => setTimeout(r, 500));
+
+      // KEY FIX: slower base delay (1500ms instead of 500ms) plus randomized
+      // jitter (±40%) so the request cadence doesn't look like a uniform
+      // bot loop to LeetCode's WAF. At ~15 pages for 300 submissions this
+      // adds roughly 15-25s total, which is a worthwhile trade against the
+      // import dying partway through and reporting a false "session expired".
+      const baseDelay = 1500;
+      const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1); // ±40%
+      await new Promise(r => setTimeout(r, baseDelay + jitter));
     }
   };
 

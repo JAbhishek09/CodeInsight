@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -9,41 +10,39 @@ import { ProblemsPage } from './pages/ProblemsPage';
 import ProfilePage from './pages/ProfilePage';
 import AnalysisPage from './pages/AnalysisPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
+import InsightsPage from './pages/InsightsPage';
+import AnalyticsPage from './pages/AnalyticsPage';
 import Navbar from './components/Navbar';
 
-
-// Layout wrapper for all authenticated pages
+// Shared authenticated shell — uses CSS vars so it adapts to dark/light mode.
 function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100">
+    <div className="min-h-screen bg-app text-primary transition-colors duration-200">
       <Navbar />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
         {children}
       </main>
     </div>
   );
 }
 
-// Wrapper components that bridge onNavigate prop → useNavigate hook
+// Auth pages (no Navbar) — still respect theme
+function AuthPageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-app text-primary flex items-center justify-center transition-colors duration-200">
+      {children}
+    </div>
+  );
+}
+
 function LoginPageWrapper() {
   const navigate = useNavigate();
-  return (
-    <div className="min-h-screen bg-[#07090e]">
-      <LoginPage onNavigate={navigate} />
-    </div>
-  );
+  return <AuthPageShell><LoginPage onNavigate={navigate} /></AuthPageShell>;
 }
-
 function RegisterPageWrapper() {
   const navigate = useNavigate();
-  return (
-    <div className="min-h-screen bg-[#07090e]">
-      <RegisterPage onNavigate={navigate} />
-    </div>
-  );
+  return <AuthPageShell><RegisterPage onNavigate={navigate} /></AuthPageShell>;
 }
-
 function DashboardWrapper() {
   const navigate = useNavigate();
   return (
@@ -52,55 +51,42 @@ function DashboardWrapper() {
     </AuthLayout>
   );
 }
-
 function ProblemsWrapper() {
   const navigate = useNavigate();
-  return (
-    <AuthLayout>
-      <ProblemsPage onNavigate={navigate} />
-    </AuthLayout>
-  );
+  return <AuthLayout><ProblemsPage onNavigate={navigate} /></AuthLayout>;
 }
 
 export default function App() {
   return (
-    // BrowserRouter with v7 future flags to silence migration warnings
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      {/* AuthProvider must be inside BrowserRouter so useNavigate works inside context callbacks */}
       <AuthProvider>
-        <Routes>
-          {/* ── Public routes ─────────────────────────────── */}
-          <Route path="/login"    element={<LoginPageWrapper />} />
-          <Route path="/register" element={<RegisterPageWrapper />} />
+        <ThemeProvider>
+          <Routes>
+            {/* Public */}
+            <Route path="/login"    element={<LoginPageWrapper />} />
+            <Route path="/register" element={<RegisterPageWrapper />} />
 
-          {/* ── Protected routes ──────────────────────────── */}
-          <Route path="/dashboard" element={
-            <ProtectedRoute><DashboardWrapper /></ProtectedRoute>
-          } />
-          <Route path="/problems" element={
-            <ProtectedRoute><ProblemsWrapper /></ProtectedRoute>
-          } />
-          {/* Problem detail page — shows submission history + code */}
-          <Route path="/problems/:problemId" element={
-            <ProtectedRoute>
-              <AuthLayout><ProblemDetailPage /></AuthLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/profile" element={
-            <ProtectedRoute>
-              <AuthLayout><ProfilePage /></AuthLayout>
-            </ProtectedRoute>
-          } />
-          <Route path="/analysis/:problemId" element={
-            <ProtectedRoute>
-              <AuthLayout><AnalysisPage /></AuthLayout>
-            </ProtectedRoute>
-          } />
+            {/* Protected */}
+            <Route path="/dashboard"
+              element={<ProtectedRoute><DashboardWrapper /></ProtectedRoute>} />
+            <Route path="/problems"
+              element={<ProtectedRoute><ProblemsWrapper /></ProtectedRoute>} />
+            <Route path="/problems/:problemId"
+              element={<ProtectedRoute><AuthLayout><ProblemDetailPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/profile"
+              element={<ProtectedRoute><AuthLayout><ProfilePage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/insights"
+              element={<ProtectedRoute><AuthLayout><InsightsPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/analytics"
+              element={<ProtectedRoute><AuthLayout><AnalyticsPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/analysis/:problemId"
+              element={<ProtectedRoute><AuthLayout><AnalysisPage /></AuthLayout></ProtectedRoute>} />
 
-          {/* ── Default: redirect / → /login ──────────────── */}
-          <Route path="/"  element={<Navigate to="/login" replace />} />
-          <Route path="*"  element={<Navigate to="/login" replace />} />
-        </Routes>
+            {/* Fallbacks */}
+            <Route path="/"  element={<Navigate to="/login" replace />} />
+            <Route path="*"  element={<Navigate to="/login" replace />} />
+          </Routes>
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

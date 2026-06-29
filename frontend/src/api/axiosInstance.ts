@@ -28,11 +28,17 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Auto-logout on 401
+// Auto-logout on 401 — but NOT for import endpoints, where a 401-shaped
+// error can originate from LeetCode's own session/WAF rejection (surfaced
+// by our backend), not from the CodeInsight JWT itself being invalid.
+// Force-logging the user out mid-import would silently kill a multi-minute
+// import run and bounce them to /login with no explanation.
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    if (error.response?.status === 401) {
+    const isImportEndpoint = error.config?.url?.includes('/import/');
+
+    if (error.response?.status === 401 && !isImportEndpoint) {
       localStorage.removeItem(TOKEN_KEY);
       window.location.href = '/login';
     }
