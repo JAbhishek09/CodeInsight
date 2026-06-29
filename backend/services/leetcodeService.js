@@ -198,6 +198,23 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
   return allProblems;
 }
 
+async function fetchProblemDifficulty(titleSlug) {
+  const query = `
+    query questionTitle($titleSlug: String!) {
+      question(titleSlug: $titleSlug) {
+        difficulty
+      }
+    }
+  `;
+  try {
+    const data = await lcGraphQL(query, { titleSlug });
+    return data?.data?.question?.difficulty || 'Medium';
+  } catch (err) {
+    console.error(`[LC] Failed to fetch difficulty for "${titleSlug}":`, err.message);
+    return 'Medium';
+  }
+}
+
 async function fetchRecentAcSubmissions(handle) {
   const query = `
     query recentAcSubmissions($username: String!, $limit: Int!) {
@@ -209,16 +226,33 @@ async function fetchRecentAcSubmissions(handle) {
   const data = await lcGraphQL(query, { username: handle, limit: 20 });
   const raw = data?.data?.recentAcSubmissionList;
   if (!Array.isArray(raw)) { console.warn(`[LC] recentAcSubmissionList null for "${handle}"`); return []; }
+  
   const seen = new Set();
-  return raw
-    .filter(s => { if (seen.has(s.titleSlug)) return false; seen.add(s.titleSlug); return true; })
-    .map(s => ({
-      platformProblemId: s.titleSlug, title: s.title,
-      link: `${LC_BASE}/problems/${s.titleSlug}/`,
-      difficulty: 'Medium', tags: [], verdict: 'Accepted',
-      submittedAt: new Date(parseInt(s.timestamp, 10) * 1000),
-      submissionId: s.id, language: s.lang, code: '',
-    }));
+  const filtered = raw.filter(s => {
+    if (seen.has(s.titleSlug)) return false;
+    seen.add(s.titleSlug);
+    return true;
+  });
+
+  const results = await Promise.all(
+    filtered.map(async (s) => {
+      const difficulty = await fetchProblemDifficulty(s.titleSlug);
+      return {
+        platformProblemId: s.titleSlug,
+        title: s.title,
+        link: `${LC_BASE}/problems/${s.titleSlug}/`,
+        difficulty,
+        tags: [],
+        verdict: 'Accepted',
+        submittedAt: new Date(parseInt(s.timestamp, 10) * 1000),
+        submissionId: s.id,
+        language: s.lang,
+        code: '',
+      };
+    })
+  );
+
+  return results;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

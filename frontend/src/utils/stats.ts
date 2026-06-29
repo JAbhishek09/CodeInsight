@@ -136,13 +136,23 @@ export function countAIAnalyses(problems: Problem[]): number {
 
 // ─── Heatmap ────────────────────────────────────────────────────────────────
 
-/** date(YYYY-MM-DD) → count of Accepted submissions that day. */
-export function computeHeatmapData(entries: ActivityEntry[]): Record<string, number> {
-  const map: Record<string, number> = {};
+export interface HeatmapDayData {
+  solves: number;
+  submissions: number;
+}
+
+/** date(YYYY-MM-DD) → count of solves and total submissions that day. */
+export function computeHeatmapData(entries: ActivityEntry[]): Record<string, HeatmapDayData> {
+  const map: Record<string, HeatmapDayData> = {};
   entries.forEach((e) => {
-    if (e.verdict !== 'Accepted') return;
     const k = dayKey(new Date(e.submittedAt));
-    map[k] = (map[k] || 0) + 1;
+    if (!map[k]) {
+      map[k] = { solves: 0, submissions: 0 };
+    }
+    map[k].submissions += 1;
+    if (e.verdict === 'Accepted') {
+      map[k].solves += 1;
+    }
   });
   return map;
 }
