@@ -43,7 +43,12 @@ export const ProblemModal: React.FC<ProblemModalProps> = ({
     if (editingProblem) {
       setTitle(editingProblem.title);
       setUrl(editingProblem.url || '');
-      setDifficulty(editingProblem.difficulty);
+      const diff = editingProblem.difficulty;
+      if (diff === 'Easy' || diff === 'Medium' || diff === 'Hard') {
+        setDifficulty(diff);
+      } else {
+        setDifficulty('Medium');
+      }
       setStatus(editingProblem.status);
       setCategory(editingProblem.category);
       setNotes(editingProblem.notes || '');
