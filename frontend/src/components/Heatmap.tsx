@@ -60,11 +60,12 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
   }
 
   const colCount = Math.ceil(cells.length / 7);
-  const CELL = 11;
-  const GAP = 3;
+  const CELL = 14;
+  const GAP = 4;
   const STEP = CELL + GAP;
-  const TOP_PAD = 16;
-  const width = colCount * STEP;
+  const LEFT_PAD = 24;
+  const TOP_PAD = 28;
+  const width = LEFT_PAD + colCount * STEP;
   const height = TOP_PAD + 7 * STEP;
 
   // Month labels: place a label above the first column whose week contains
@@ -95,8 +96,8 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
           {monthLabels.map(({ col, label }) => (
             <text
               key={`${col}-${label}`}
-              x={col * STEP}
-              y={10}
+              x={LEFT_PAD + col * STEP}
+              y={16}
               fontSize="9"
               fill="#64748b"
               fontFamily="monospace"
@@ -108,8 +109,8 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
             label ? (
               <text
                 key={row}
-                x={-4}
-                y={TOP_PAD + row * STEP + CELL - 1}
+                x={LEFT_PAD - 6}
+                y={TOP_PAD + row * STEP + CELL - 2}
                 textAnchor="end"
                 fontSize="8"
                 fill="#475569"
@@ -122,7 +123,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
           {cells.map((c, i) => {
             const col = Math.floor(i / 7);
             const row = i % 7;
-            const x = col * STEP;
+            const x = LEFT_PAD + col * STEP;
             const y = TOP_PAD + row * STEP;
             return (
               <rect
@@ -131,7 +132,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
                 y={y}
                 width={CELL}
                 height={CELL}
-                rx={2.5}
+                rx={3}
                 fill={levelColor(c.solves)}
                 stroke="rgba(255,255,255,0.03)"
                 onMouseEnter={() => {
@@ -188,7 +189,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
         <div className="flex items-center gap-1.5">
           <span>Less</span>
           {LEVELS.map((l, i) => (
-            <span key={i} className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: l.color }} />
+            <span key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color }} />
           ))}
           <span>More</span>
         </div>
