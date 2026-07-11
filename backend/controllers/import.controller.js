@@ -452,18 +452,34 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
       message: 'No problems returned — session may be expired or handle incorrect.' });
   }
 
-  const diffMap = new Map();
+  // FIX (July 2026 — tag backfill): fetchAllSolvedProblemsAuthenticated goes
+  // through the same lcGraphQL/makeHeaders path as submissionDetails, which
+  // was silently 403ing before the WAF-header fix. That meant `tags` here
+  // was very likely always [] for anyone who imported before that fix — the
+  // exact same root cause behind "No topic data yet" on the Analytics and AI
+  // Insights pages. We already have real tags in `problems` (from
+  // topicTags), so backfill them in the same pass as the difficulty repair
+  // instead of requiring a separate re-import.
+  const infoMap = new Map();
   for (const p of problems) {
-    diffMap.set(p.platformProblemId, p.difficulty || 'Medium');
+    infoMap.set(p.platformProblemId, {
+      difficulty: p.difficulty || 'Medium',
+      tags: Array.isArray(p.tags) ? p.tags.filter(Boolean) : [],
+    });
   }
 
-  console.log(`[Repair] Got ${diffMap.size} real difficulties. Building bulk ops...`);
+  console.log(`[Repair] Got ${infoMap.size} real difficulty+tag records. Building bulk ops...`);
   const ops = [];
-  for (const [slug, diff] of diffMap.entries()) {
+  for (const [slug, info] of infoMap.entries()) {
     ops.push({
       updateOne: {
         filter: { user: userId, platform: 'leetcode', platformProblemId: slug },
-        update: { $set: { difficulty: diff } },
+        update: {
+          $set: {
+            difficulty: info.difficulty,
+            ...(info.tags.length ? { tags: info.tags } : {}),
+          },
+        },
       },
     });
   }
@@ -474,10 +490,12 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
 
   const result = await Problem.bulkWrite(ops, { ordered: false });
   const fixed  = result.modifiedCount;
+  const withTags = Array.from(infoMap.values()).filter(v => v.tags.length > 0).length;
 
-  console.log(`[Repair] Done. ${fixed}/${ops.length} records updated.`);
+  console.log(`[Repair] Done. ${fixed}/${ops.length} records updated (${withTags} had tags).`);
   res.status(200).json({
-    success: true, fixed, total: ops.length,
-    message: `Difficulty repair complete. Updated ${fixed} of ${ops.length} problems with real LeetCode difficulties.`,
+    success: true, fixed, total: ops.length, withTags,
+    message: `Repair complete. Updated ${fixed} of ${ops.length} problems with real difficulties` +
+      (withTags > 0 ? ` and topic tags (${withTags} problems had tags).` : '. No tags came back — session may lack access.'),
   });
 });

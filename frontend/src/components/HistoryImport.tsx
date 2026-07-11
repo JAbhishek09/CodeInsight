@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode, getCodeCoverageStatus } from '../api/import.api';
-import { Download, Code2, AlertCircle, CheckCircle2, ChevronRight, Eye, EyeOff, Loader2, RotateCcw } from 'lucide-react';
+import { importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode, getCodeCoverageStatus, repairDifficultyAndTags } from '../api/import.api';
+import { Download, Code2, AlertCircle, CheckCircle2, ChevronRight, Eye, EyeOff, Loader2, RotateCcw, Wrench } from 'lucide-react';
 
 interface Props {
   historyImportStatus: 'none' | 'partial' | 'full';
@@ -18,6 +18,10 @@ export default function HistoryImport({
   const [importingProblems, setImportingProblems] = useState(false);
   const [problemResult, setProblemResult] = useState<string | null>(null);
   const [problemError, setProblemError] = useState<string | null>(null);
+
+  const [repairing, setRepairing] = useState(false);
+  const [repairResult, setRepairResult] = useState<string | null>(null);
+  const [repairError, setRepairError] = useState<string | null>(null);
 
   const [sessionCookie, setSessionCookie] = useState('');
   const [showCookie, setShowCookie] = useState(false);
@@ -83,6 +87,29 @@ export default function HistoryImport({
       setProblemError(e.message || 'Import failed');
     } finally {
       setImportingProblems(false);
+    }
+  };
+
+  // Retroactive fix for problems imported before the WAF-header fix, where
+  // difficulty and topic tags came back empty/null from LeetCode's GraphQL
+  // API and were silently stored that way (same root cause as the "No topic
+  // data yet" gap on the Analytics/AI Insights pages).
+  const handleRepairTags = async () => {
+    if (!sessionCookie.trim()) {
+      setRepairError('Paste your LEETCODE_SESSION cookie below (Step 2) first — this needs authenticated access.');
+      return;
+    }
+    setRepairing(true);
+    setRepairResult(null);
+    setRepairError(null);
+    try {
+      const data = await repairDifficultyAndTags(sessionCookie.trim());
+      setRepairResult(data.message);
+      onImportComplete();
+    } catch (e: any) {
+      setRepairError(e.message || 'Repair failed');
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -313,13 +340,23 @@ export default function HistoryImport({
             Fetches your accepted problems — title, difficulty, and topic tags.
             Paste your <code className="text-purple-400 bg-purple-950/30 px-1 rounded">LEETCODE_SESSION</code> in Step 2 first for your <strong className="text-slate-400">complete history</strong>.
           </p>
-          <button
-            onClick={handleImportProblems}
-            disabled={importingProblems}
-            className="flex items-center gap-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-all"
-          >
-            {importingProblems ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Download className="w-3.5 h-3.5" /> Import Problem List</>}
-          </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={handleImportProblems}
+              disabled={importingProblems}
+              className="flex items-center gap-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-all"
+            >
+              {importingProblems ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Download className="w-3.5 h-3.5" /> Import Problem List</>}
+            </button>
+            <button
+              onClick={handleRepairTags}
+              disabled={repairing}
+              title="Re-fetches real difficulty and topic tags for problems already imported — fixes 'No topic data' on Analytics/AI Insights."
+              className="flex items-center gap-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-400 hover:text-slate-200 border border-slate-800 px-4 py-2 rounded-lg transition-all"
+            >
+              {repairing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Repairing…</> : <><Wrench className="w-3.5 h-3.5" /> Fix Missing Tags/Difficulty</>}
+            </button>
+          </div>
           {problemResult && (
             <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{problemResult}</span>
@@ -328,6 +365,16 @@ export default function HistoryImport({
           {problemError && (
             <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{problemError}</span>
+            </div>
+          )}
+          {repairResult && (
+            <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{repairResult}</span>
+            </div>
+          )}
+          {repairError && (
+            <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{repairError}</span>
             </div>
           )}
         </div>

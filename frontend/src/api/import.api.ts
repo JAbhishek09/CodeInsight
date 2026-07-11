@@ -51,3 +51,17 @@ export const getCodeCoverageStatus = async () => {
   const res = await api.get('/import/leetcode/code-status');
   return res.data;
 };
+
+/**
+ * One-time repair: re-fetches real difficulty AND topic tags for every
+ * already-imported problem and backfills both. Needed for anyone who ran
+ * Phase 1A before the GraphQL WAF-header fix, since tags/difficulty came
+ * back null/empty and were silently stored that way.
+ *
+ * @param sessionCookie  LEETCODE_SESSION value (required — needs authenticated access)
+ */
+export const repairDifficultyAndTags = async (sessionCookie: string) => {
+  const res = await api.post('/import/leetcode/repair-difficulty', { sessionCookie });
+  return res.data;
+  // Returns: { fixed, total, withTags, message }
+};
