@@ -7,10 +7,17 @@
  * FIX: Phase 1B $setOnInsert no longer sets difficulty — it only fires on
  *      NEW docs. Existing docs from Phase 1A keep their real difficulty.
  *
+ * FIX (July 2026): Phase 1C now uses submission IDs already stored in MongoDB
+ *      to call submissionDetails GraphQL directly — the fast path. Previously
+ *      it always called the REST per-problem endpoint first, which also has the
+ *      code-purge problem for old submissions (same bug as Phase 1B).
+ *
+ * FIX (July 2026): Phase 1C filter now also catches problems with ZERO
+ *      submission records (Phase 1A creates problems with empty submissions[])
+ *      so they get backfilled even when Phase 1B's REST cursor didn't reach them.
+ *
  * NEW: repairDifficulty() — one-time endpoint to retroactively fix all
  *      problems stored as 'Medium' by the old hardcoded import bug.
- *      Calls userProgressQuestionList (session-gated) to get real difficulties
- *      and bulk-writes them back to MongoDB.
  */
 
 import asyncHandler from '../utils/asyncHandler.js';
@@ -45,8 +52,6 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
         : 'No problems via public API. Provide LEETCODE_SESSION for full import.' });
   }
 
-  // FIX: use $set for difficulty/tags so Phase 1A always refreshes ground-truth
-  //      data, even for docs already created by an earlier run with wrong 'Medium'.
   const upsertOps = problems.map((p) => ({
     updateOne: {
       filter: { user: userId, platform: 'leetcode', platformProblemId: p.platformProblemId },
@@ -55,13 +60,6 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
           user: userId, platform: 'leetcode', platformProblemId: p.platformProblemId,
           title: p.title, url: p.link, status: 'Solved', submissions: [],
         },
-        // Always overwrite difficulty + tags — these are the ground-truth values.
-        // NOTE: title/url must NOT appear here too — they're already covered by
-        // $setOnInsert above, and having the same path in both $set and
-        // $setOnInsert in one update causes MongoDB to throw "Updating the
-        // path 'title' would create a conflict at 'title'" on the INSERT
-        // branch of the upsert (new documents only — this is why it only
-        // surfaced for problems not yet in the database).
         $set: {
           difficulty: p.difficulty || 'Medium',
           ...(p.tags?.length ? { tags: p.tags } : {}),
@@ -145,6 +143,11 @@ export const getCodeCoverageStatus = asyncHandler(async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 1B — Submission history WITH code (REST, cursor-based)
+//
+// NOTE (July 2026): fetchSubmissionHistoryREST now enriches each AC submission
+// via submissionDetails GraphQL internally before returning, so the `code`
+// field on returned submissions is populated even for old submissions where
+// LeetCode's REST endpoint purges the code field.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const importLeetcodeCode = asyncHandler(async (req, res) => {
@@ -154,23 +157,23 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
   const handle = parseLeetcodeHandle(user.leetcodeHandle);
   if (!handle) { res.status(400); throw new Error('No valid LeetCode handle set.'); }
 
-  const { sessionCookie, lastKey = '' } = req.body;
+  const { sessionCookie, offset = 0 } = req.body;
   if (!sessionCookie || sessionCookie.trim().length < 10) {
     res.status(400);
     throw new Error('LEETCODE_SESSION is required.');
   }
 
-  console.log(`[Import 1B] REST page lastKey="${lastKey}" for "${handle}"`);
+  console.log(`[Import 1B] REST offset=${offset} for "${handle}"`);
 
-  const { submissions, hasNext, nextKey } = await lc.fetchSubmissionHistoryREST(
-    sessionCookie.trim(), lastKey, 20
+  const { submissions, hasNext, nextOffset } = await lc.fetchSubmissionHistoryREST(
+    sessionCookie.trim(), Number(offset), 20
   );
-  console.log(`[Import 1B] fetched=${submissions.length} hasNext=${hasNext} nextKey="${nextKey}"`);
+  console.log(`[Import 1B] fetched=${submissions.length} hasNext=${hasNext} nextOffset=${nextOffset}`);
 
   let totalAttached = 0, totalBackfilled = 0;
 
   if (submissions.length > 0) {
-    // $setOnInsert only — never overwrite difficulty set by Phase 1A
+    // Upsert problem docs — $setOnInsert only, never overwrite Phase 1A difficulty
     const upsertOps = submissions.map((sub) => ({
       updateOne: {
         filter: { user: userId, platform: 'leetcode', platformProblemId: sub.platformProblemId },
@@ -178,7 +181,6 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
           $setOnInsert: {
             user: userId, platform: 'leetcode', platformProblemId: sub.platformProblemId,
             title: sub.title, url: sub.link,
-            // 'Medium' fallback ONLY for docs not yet created by Phase 1A
             difficulty: 'Medium', tags: [], submissions: [],
             status: sub.verdict === 'Accepted' ? 'Solved' : 'Attempted',
           },
@@ -188,6 +190,7 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
     }));
     await Problem.bulkWrite(upsertOps, { ordered: false });
 
+    // Update code on existing submission records that already exist but have empty code
     const subsWithCode = submissions.filter(s => s.code && s.code.trim().length > 0);
     if (subsWithCode.length > 0) {
       const backfillOps = subsWithCode.map((sub) => ({
@@ -205,6 +208,7 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
       totalBackfilled = r.modifiedCount;
     }
 
+    // Push new submission records (only for submissions not already in the array)
     const pushOps = submissions.map((sub) => ({
       updateOne: {
         filter: {
@@ -233,9 +237,17 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
     lastHistoryImportAt: new Date(),
   });
 
+  // Surface *why* code enrichment failed, if it did, instead of leaving the
+  // caller staring at zeros with no diagnostic path. This was previously
+  // only visible in server console logs.
+  const acSubsThisPage = submissions.filter(s => s.verdict === 'Accepted').length;
+  const acWithCodeThisPage = submissions.filter(s => s.verdict === 'Accepted' && s.code).length;
+  const lastError = (acSubsThisPage > 0 && acWithCodeThisPage === 0) ? lc.getLastCodeFetchError() : null;
+
   res.status(200).json({
     success: true, fetched: submissions.length, attached: totalAttached,
-    backfilled: totalBackfilled, hasMore: hasNext, nextKey,
+    backfilled: totalBackfilled, hasMore: hasNext, nextOffset,
+    ...(lastError ? { codeEnrichmentError: lastError } : {}),
     message: hasNext
       ? `Page: ${totalAttached} new, ${totalBackfilled} updated. More pages available...`
       : `Pass 1 complete. ${totalAttached} new, ${totalBackfilled} updated.`,
@@ -244,6 +256,20 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 1C — Per-problem backfill for submissions still missing code
+//
+// FIX (July 2026 — fast path via existing submissionIds):
+// Phase 1B now pushes submission records with submissionIds (but possibly empty
+// code if submissionDetails GraphQL failed for that ID). Rather than always
+// going back to the REST per-problem endpoint (which also returns empty code
+// for old submissions), Phase 1C now:
+//   1. Checks if the problem already has an AC submission record with a
+//      submissionId in MongoDB → calls submissionDetails directly (fast, 1 req)
+//   2. Falls back to fetchBestAcSubmissionForProblem for problems with no
+//      submission records at all (Phase 1A-only problems, or problems where
+//      Phase 1B's REST cursor window didn't reach them)
+//
+// The filter also now includes problems with status='Solved' but ZERO submission
+// records (Phase 1A creates these; Phase 1B may not reach old ones).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const backfillMissingCode = asyncHandler(async (req, res) => {
@@ -257,14 +283,23 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
   const pageLimit   = Math.min(Number(limit), 20);
   const session     = sessionCookie.trim();
 
+  // Match problems that still need code:
+  //  Case A — has AC submission(s) with empty/null/missing code
+  //  Case B — status=Solved but no submission records at all (Phase 1A-only)
   const needsBackfillFilter = {
-    user: userId, platform: 'leetcode',
-    submissions: {
-      $elemMatch: {
-        verdict: 'Accepted',
-        $or: [{ code: '' }, { code: null }, { code: { $exists: false } }],
+    user: userId, platform: 'leetcode', status: 'Solved',
+    $or: [
+      {
+        submissions: {
+          $elemMatch: {
+            verdict: 'Accepted',
+            $or: [{ code: '' }, { code: null }, { code: { $exists: false } }],
+          },
+        },
       },
-    },
+      { submissions: { $size: 0 } },
+      { submissions: { $exists: false } },
+    ],
   };
 
   const total = await Problem.countDocuments(needsBackfillFilter);
@@ -283,30 +318,92 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
 
   for (const problem of problems) {
     try {
-      const result = await lc.fetchBestAcSubmissionForProblem(problem.platformProblemId, session);
-      if (!result || !result.code || result.code.trim().length === 0) { skipped++; continue; }
-
-      const updated = await Problem.updateOne(
-        { _id: problem._id },
-        { $set: { 'submissions.$[elem].code': result.code } },
-        {
-          arrayFilters: [{
-            'elem.verdict': 'Accepted',
-            $or: [{ 'elem.code': '' }, { 'elem.code': null }, { 'elem.code': { $exists: false } }],
-          }],
-        }
+      // Fast path: if we already have an AC submissionId in MongoDB, call
+      // submissionDetails directly — 1 GraphQL request, no REST discovery needed.
+      const existingAcSub = (problem.submissions ?? []).find(s =>
+        s.verdict === 'Accepted' &&
+        s.submissionId &&
+        String(s.submissionId).length > 0 &&
+        (!s.code || s.code.trim().length === 0)
       );
+
+      let result = null;
+
+      if (existingAcSub?.submissionId) {
+        console.log(`[Import 1C] Fast path: submissionDetails for ${existingAcSub.submissionId} ("${problem.platformProblemId}")`);
+        const code = await lc.fetchSubmissionCodeById(existingAcSub.submissionId, session);
+        if (code && code.trim().length > 0) {
+          result = { submissionId: String(existingAcSub.submissionId), code, verdict: 'Accepted' };
+        } else {
+          console.warn(`[Import 1C] submissionDetails empty for ${existingAcSub.submissionId} — trying discovery`);
+        }
+      }
+
+      // Slow path: no usable submissionId in MongoDB — discover via REST + submissionDetails
+      if (!result) {
+        result = await lc.fetchBestAcSubmissionForProblem(problem.platformProblemId, session);
+      }
+
+      if (!result || !result.code || result.code.trim().length === 0) {
+        skipped++;
+        continue;
+      }
+
+      // Write the code back to MongoDB
+      let updated;
+      const targetId = result.submissionId || existingAcSub?.submissionId;
+
+      if (targetId) {
+        // Target the specific submission record by ID (positional $ operator)
+        updated = await Problem.updateOne(
+          { _id: problem._id, 'submissions.submissionId': String(targetId) },
+          { $set: { 'submissions.$.code': result.code } }
+        );
+        // If that record wasn't found (ID mismatch), fall back to updating any empty AC sub
+        if (updated.modifiedCount === 0) {
+          updated = await Problem.updateOne(
+            { _id: problem._id },
+            { $set: { 'submissions.$[elem].code': result.code } },
+            {
+              arrayFilters: [{
+                'elem.verdict': 'Accepted',
+                $or: [{ 'elem.code': '' }, { 'elem.code': null }, { 'elem.code': { $exists: false } }],
+              }],
+            }
+          );
+        }
+      } else {
+        // No submissionId at all — push a brand new submission record
+        updated = await Problem.updateOne(
+          { _id: problem._id },
+          {
+            $push: {
+              submissions: {
+                $each: [{
+                  submittedAt:  result.submittedAt ?? new Date(),
+                  verdict:      'Accepted',
+                  language:     result.language ?? '',
+                  code:         result.code,
+                  submissionId: String(result.submissionId ?? ''),
+                }],
+                $sort: { submittedAt: -1 },
+                $slice: 200,
+              },
+            },
+          }
+        );
+      }
+
       if (updated.modifiedCount > 0) filled++;
       else skipped++;
+
     } catch (err) {
       console.warn(`[Import 1C] ✗ "${problem.platformProblemId}": ${err.message}`);
       skipped++;
     }
-    // Randomized delay (was a flat 350ms) so per-problem requests don't form
-    // a perfectly uniform cadence — the same WAF/bot-detection concern as
-    // Phase 1B's pagination loop, but here each iteration can already issue
-    // up to 3 LeetCode requests (REST + GraphQL list + submissionDetails).
-    const baseDelay = 500;
+
+    // Randomised delay — each iteration makes 1-2 LeetCode requests (fast path = 1)
+    const baseDelay = 400;
     const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1);
     await new Promise(r => setTimeout(r, baseDelay + jitter));
   }
@@ -318,9 +415,12 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
     lastHistoryImportAt: new Date(),
   });
 
+  const backfillError = (filled === 0 && skipped > 0) ? lc.getLastCodeFetchError() : null;
+
   res.status(200).json({
     success: true, processed, filled, skipped, backfilled: filled, total,
     hasMore, nextSkip: currentSkip + processed,
+    ...(backfillError ? { codeEnrichmentError: backfillError } : {}),
     message: hasMore
       ? `Backfill: ${filled} filled, ${skipped} unavailable. ${total - currentSkip - processed} remaining.`
       : `Backfill complete. ${filled} submissions now have code.`,
@@ -329,15 +429,6 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // repairDifficulty — ONE-TIME FIX for existing wrong 'Medium' records
-//
-// What happened: Phase 1B used to hardcode difficulty: 'Medium' in $setOnInsert.
-// If users ran Phase 1B before Phase 1A (or Phase 1A ran without a session so
-// it fell back to fetchRecentAcSubmissions which also hardcodes 'Medium'),
-// their problems are all stored as 'Medium' regardless of actual difficulty.
-//
-// This endpoint calls userProgressQuestionList with the user's session to get
-// the real difficulty for every solved problem, then bulk-writes the corrections.
-// It should be triggered once from the Import modal after re-entering a session.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const repairDifficulty = asyncHandler(async (req, res) => {
@@ -354,9 +445,6 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
   }
 
   console.log(`[Repair] Fetching real difficulties for "${handle}"...`);
-
-  // fetchAllSolvedProblems with session uses userProgressQuestionList which
-  // returns the real difficulty field for every problem the user has solved.
   const problems = await lc.fetchAllSolvedProblems(handle, sessionCookie.trim());
 
   if (!problems.length) {
@@ -364,19 +452,12 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
       message: 'No problems returned — session may be expired or handle incorrect.' });
   }
 
-  // Build a map: titleSlug → real difficulty
   const diffMap = new Map();
   for (const p of problems) {
-    if (p.platformProblemId && p.difficulty && p.difficulty !== 'Medium') {
-      diffMap.set(p.platformProblemId, p.difficulty);
-    }
-    // Still include all problems for the update, even Medium ones
     diffMap.set(p.platformProblemId, p.difficulty || 'Medium');
   }
 
   console.log(`[Repair] Got ${diffMap.size} real difficulties. Building bulk ops...`);
-
-  // Bulk-write: update every leetcode problem for this user with real difficulty
   const ops = [];
   for (const [slug, diff] of diffMap.entries()) {
     ops.push({
@@ -388,19 +469,15 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
   }
 
   if (!ops.length) {
-    return res.status(200).json({ success: true, fixed: 0, total: 0,
-      message: 'No operations to perform.' });
+    return res.status(200).json({ success: true, fixed: 0, total: 0, message: 'No operations to perform.' });
   }
 
   const result = await Problem.bulkWrite(ops, { ordered: false });
   const fixed  = result.modifiedCount;
 
   console.log(`[Repair] Done. ${fixed}/${ops.length} records updated.`);
-
   res.status(200).json({
-    success: true,
-    fixed,
-    total: ops.length,
+    success: true, fixed, total: ops.length,
     message: `Difficulty repair complete. Updated ${fixed} of ${ops.length} problems with real LeetCode difficulties.`,
   });
 });

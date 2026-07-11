@@ -10,15 +10,17 @@ export const importLeetcodeProblems = async (sessionCookie?: string) => {
 
 /**
  * Phase 1B — One page of submission history WITH code via REST.
- * Paginated by cursor string (lastKey), not integer offset.
+ * Paginated by numeric offset (LeetCode's own cursor field was confirmed
+ * broken — it always returns "" — so plain offset increments are used instead).
  *
  * @param sessionCookie  LEETCODE_SESSION value
- * @param lastKey        Cursor from previous response; '' for first page
+ * @param offset         Row offset into LeetCode's submission history; 0 for first page
  */
-export const importLeetcodeCode = async (sessionCookie: string, lastKey = '') => {
-  const res = await api.post('/import/leetcode/code', { sessionCookie, lastKey });
+export const importLeetcodeCode = async (sessionCookie: string, offset = 0) => {
+  const res = await api.post('/import/leetcode/code', { sessionCookie, offset });
   return res.data;
-  // Returns: { fetched, attached, backfilled, hasMore, nextKey, message }
+  // Returns: { fetched, attached, backfilled, hasMore, nextOffset, message,
+  //            codeEnrichmentError? }
 };
 
 /**
@@ -33,7 +35,8 @@ export const importLeetcodeCode = async (sessionCookie: string, lastKey = '') =>
 export const backfillLeetcodeCode = async (sessionCookie: string, skip = 0, limit = 20) => {
   const res = await api.post('/import/leetcode/backfill', { sessionCookie, skip, limit });
   return res.data;
-  // Returns: { processed, backfilled, hasMore, nextSkip, message }
+  // Returns: { processed, backfilled, hasMore, nextSkip, message,
+  //            codeEnrichmentError? }
 };
 
 /**

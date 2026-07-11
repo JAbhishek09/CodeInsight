@@ -7,6 +7,9 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProblemsPage } from './pages/ProblemsPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage'; 
+// (Adjust the path if you saved them in a different folder!)
 import ProfilePage from './pages/ProfilePage';
 import AnalysisPage from './pages/AnalysisPage';
 import ProblemDetailPage from './pages/ProblemDetailPage';
@@ -65,6 +68,10 @@ export default function App() {
             {/* Public */}
             <Route path="/login"    element={<LoginPageWrapper />} />
             <Route path="/register" element={<RegisterPageWrapper />} />
+  
+  {/* NEW Reset Routes */}
+  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+  <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Protected */}
             <Route path="/dashboard"

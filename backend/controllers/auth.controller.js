@@ -2,6 +2,9 @@ import asyncHandler from '../utils/asyncHandler.js';
 import User from '../models/User.js';
 import generateToken from '../utils/generateToken.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import bcrypt from 'bcrypt';
 
 /**
  * @desc    Register a new user
@@ -103,6 +106,101 @@ export const getMe = asyncHandler(async (req, res) => {
     data: req.user,
   });
 });
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.body.email });
+    
+    // Security tip: Don't tell the client if the email doesn't exist
+    // Just pretend it worked to prevent email-guessing attacks.
+    if (!user) {
+      return res.status(200).json({ success: true, message: 'Email sent' });
+    }
+
+    // 1. Generate a secure random token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+
+    // 2. Hash the token and save it to the database (Security best practice!)
+    // We hash it in the DB so if the DB leaks, attackers can't use the reset tokens.
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 minutes from now
+    
+    await user.save();
+
+    // 3. Create the reset URL pointing to your React frontend
+    // Make sure to send the UNHASHED token in the email!
+    const resetUrl = `http://localhost:5173/reset-password?token=${resetToken}`;
+
+    // 4. Send the email using Nodemailer
+    const transporter = nodemailer.createTransport({
+      service: 'Gmail', // or SendGrid, AWS SES, etc.
+      auth: {
+        user: process.env.EMAIL_USERNAME,
+        pass: process.env.EMAIL_PASSWORD
+      }
+    });
+
+    await transporter.sendMail({
+      from: '"CodeInsight Support" <noreply@codeinsight.com>',
+      to: user.email,
+      subject: 'CodeInsight -Password Reset Request',
+      html: `
+       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+          <h2 style="color: #db2777;">CodeInsight</h2>
+          <h3>You requested a password reset</h3>
+          <p>Click the button below to securely set a new password. This link will expire in 15 minutes.</p>
+          <a href="${resetUrl}" style="background-color: #db2777; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">
+            Reset Password
+          </a>
+          <p style="margin-top: 30px; font-size: 12px; color: #666;">
+            If you did not request this, please ignore this email. Your password will remain unchanged.
+          </p>
+        </div>
+      `
+    });
+
+    res.status(200).json({ success: true, message: 'Email sent' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+export const resetPassword = async (req, res) => {
+  try {
+    // 1. Get the token from the request body or URL params
+    const { token, newPassword } = req.body;
+
+    // 2. Hash the incoming token so we can compare it to the one in the database
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    // 3. Find the user with this token AND ensure the token hasn't expired
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() } // $gt means "Greater Than" right now
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
+    }
+
+    // 4. Hash the new password and save it
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    // 5. CRITICAL: Clear out the reset fields so the token can never be used again
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+    
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Password successfully updated' });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
 
 /**
  * @desc    Save platform handles for the logged-in user

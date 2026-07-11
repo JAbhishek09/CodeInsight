@@ -24,6 +24,9 @@ export default function HistoryImport({
   const [importingCode, setImportingCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeComplete, setCodeComplete] = useState(false);
+  // Surfaces WHY code enrichment returned zeros (e.g. LeetCode WAF blocking
+  // the submissionDetails GraphQL call) instead of leaving that invisible.
+  const [enrichmentWarning, setEnrichmentWarning] = useState<string | null>(null);
 
   // Phase 1B progress (global submission list)
   const [phase, setPhase] = useState<'idle' | '1b' | '1c'>('idle');
@@ -83,10 +86,12 @@ export default function HistoryImport({
     }
   };
 
-  // Phase 1B: paginate via REST cursor (lastKey), not integer offset
+  // Phase 1B: paginate via numeric offset (LeetCode's own cursor field was
+  // confirmed broken — {"has_next":true,"last_key":""} — so we no longer
+  // depend on it at all).
   const runPhase1B = async (session: string): Promise<void> => {
     setPhase('1b');
-    let lastKey = '';          // '' = first page; subsequent pages use the cursor returned
+    let offset = 0;
     let fetched = 0, attached = 0, backfilled = 0, pages = 0;
     let consecutiveAuthFailures = 0;
 
@@ -95,7 +100,7 @@ export default function HistoryImport({
 
       let data;
       try {
-        data = await importLeetcodeCode(session, lastKey);
+        data = await importLeetcodeCode(session, offset);
         consecutiveAuthFailures = 0; // reset on any success
       } catch (err: any) {
         const msg = err?.message || '';
@@ -110,12 +115,12 @@ export default function HistoryImport({
           consecutiveAuthFailures += 1;
           const backoffMs = 5000 * consecutiveAuthFailures; // 5s, 10s, 15s
           console.warn(
-            `[Import 1B] Auth-like failure on page ${pages + 1} ` +
+            `[Import 1B] Auth-like failure at offset ${offset} ` +
             `(attempt ${consecutiveAuthFailures}/3) — likely rate-limit, ` +
             `not real expiry. Backing off ${backoffMs}ms before retry.`
           );
           await new Promise(r => setTimeout(r, backoffMs));
-          continue; // retry the SAME lastKey, don't advance the cursor
+          continue; // retry the SAME offset, don't advance
         }
         // Either not an auth-shaped error, or we've retried 3 times already —
         // surface it for real now.
@@ -127,14 +132,26 @@ export default function HistoryImport({
       backfilled += data.backfilled ?? 0;
       pages      += 1;
 
+      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
+
       setTotalFetched(fetched);
       setTotalAttached(attached);
       setTotalBackfilled(backfilled);
       setPagesProcessed(pages);
 
       if (!data.hasMore) break;
-      lastKey = data.nextKey ?? '';  // use cursor for next page
+      const previousOffset = offset;
+      offset = data.nextOffset ?? offset + 20;
 
+      // GUARD: if the offset genuinely didn't advance (defensive backstop —
+      // should no longer trigger now that we don't depend on LeetCode's
+      // broken cursor field, but better to fail loudly than loop forever).
+      if (offset <= previousOffset) {
+        throw new Error(
+          `Pagination didn't advance past offset ${previousOffset} after ${pages} fetches. ` +
+          `Only your most recent ${fetched} submissions were scanned.`
+        );
+      }
       // KEY FIX: slower base delay (1500ms instead of 500ms) plus randomized
       // jitter (±40%) so the request cadence doesn't look like a uniform
       // bot loop to LeetCode's WAF. At ~15 pages for 300 submissions this
@@ -160,6 +177,8 @@ export default function HistoryImport({
 
     while (!abortRef.current) {
       const data = await backfillLeetcodeCode(session, skip, 20);
+
+      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
 
       totalFilled    += data.filled    ?? 0;
       totalSkipped   += data.skipped   ?? 0;
@@ -196,6 +215,7 @@ export default function HistoryImport({
     setBackfillFilled(0);
     setBackfillSkipped(0);
     setBackfillProcessed(0);
+    setEnrichmentWarning(null);
     abortRef.current = false;
 
     const session = sessionCookie.trim();
@@ -465,6 +485,13 @@ export default function HistoryImport({
             <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>{codeError}</span>
+            </div>
+          )}
+
+          {enrichmentWarning && !codeError && (
+            <div className="flex items-start gap-2 bg-yellow-950/20 border border-yellow-500/20 rounded-lg p-3 text-[11px] font-mono text-yellow-400">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>Code fetch is silently failing: {enrichmentWarning}</span>
             </div>
           )}
         </div>
