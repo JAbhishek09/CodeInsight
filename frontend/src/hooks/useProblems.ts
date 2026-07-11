@@ -15,7 +15,9 @@ export interface Problem {
   createdAt?: string;
   updatedAt?: string;
   submissions?: any[];
+  tags?: string[];
   aiAnalysis?: any;
+  aiAnalysisStatus?: 'idle' | 'pending' | 'ready' | 'error';
 }
 
 interface Filters {

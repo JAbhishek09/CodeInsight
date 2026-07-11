@@ -1,17 +1,32 @@
 /**
  * leetcodeService.js
  * ─────────────────────────────────────────────────────────────────────────────
- * All LeetCode data-fetching logic.
+ * FIX (June 2026 — WAF): Added full Chromium browser fingerprint headers to
+ * prevent LeetCode WAF from returning 403 on REST API calls.
  *
- * FIX (June 2026): LeetCode REST /api/submissions/ was returning 403 even with
- * a valid LEETCODE_SESSION. Root cause: LeetCode's CDN/WAF fingerprints the
- * request headers and rejects requests that don't look like a real Chrome
- * browser. The old makeRestHeaders() was missing:
- *   - Accept-Language
- *   - sec-ch-ua / sec-ch-ua-mobile / sec-ch-ua-platform
- *   - sec-fetch-dest / sec-fetch-mode / sec-fetch-site
- *   - DNT
- * Adding the full Chromium browser header set resolves the 403.
+ * FIX (July 2026 — Empty code): LeetCode's REST /api/submissions/ endpoint
+ * does NOT return source code for submissions older than ~30 days. The `code`
+ * field is present in the JSON response but is always "" for old submissions.
+ *
+ * Root cause of "0 submissions with code" after import:
+ *   Phase 1B paginated all 77 pages (1540 submissions) but every record had
+ *   code:"" because the REST endpoint purged it. Phase 1C then called the
+ *   per-problem REST endpoint which has the same purge, so it also returned
+ *   empty code. Net result: all records inserted, 0 code attached.
+ *
+ * THE REAL SOURCE OF CODE: submissionDetails GraphQL query. This is the only
+ * LeetCode API that reliably returns source code for any submission by ID
+ * regardless of age. We now call it inline during Phase 1B enrichment, and
+ * Phase 1C uses it directly via the exported fetchSubmissionCodeById.
+ *
+ * STRATEGY:
+ *  Phase 1B — REST pagination for metadata (IDs, verdicts, timestamps).
+ *              For every AC submission without code on the page, call
+ *              submissionDetails GraphQL to enrich it before returning.
+ *  Phase 1C — If a problem already has a submissionId in MongoDB (put there
+ *              by Phase 1B), call fetchSubmissionCodeById directly (1 request).
+ *              Otherwise fall back to fetchBestAcSubmissionForProblem which
+ *              discovers the ID via REST then calls submissionDetails.
  */
 
 import axios from 'axios';
@@ -28,8 +43,6 @@ const DEFAULT_HEADERS = {
   'Origin':       LC_BASE,
 };
 
-// Full browser fingerprint headers — required for REST API calls.
-// Without these, LeetCode's WAF returns 403 even with a valid session cookie.
 const BROWSER_FINGERPRINT_HEADERS = {
   'Accept':                    'application/json, text/plain, */*',
   'Accept-Language':           'en-US,en;q=0.9',
@@ -45,20 +58,57 @@ const BROWSER_FINGERPRINT_HEADERS = {
   'X-Requested-With':          'XMLHttpRequest',
 };
 
-// ─── Session sanitiser ────────────────────────────────────────────────────────
 function sanitiseSession(raw) {
   if (!raw || typeof raw !== 'string') return raw;
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
+
+  // Strip surrounding quotes some browsers/extensions include when copying
+  // a cookie value via "Copy value".
+  trimmed = trimmed.replace(/^['"]+|['"]+$/g, '');
+
+  // CASE 1: the user pasted a full Cookie header or the whole cookie jar
+  // (e.g. "csrftoken=abc; LEETCODE_SESSION=eyJ...; messages=...") instead of
+  // just the LEETCODE_SESSION row's value. This is what produced a
+  // 23,249-char paste in testing — the old heuristic below (looking for a
+  // second "eyJ" at a fixed offset) sliced that blindly and landed on
+  // garbage, causing a 401 even though a valid session was in there.
+  // Extract the actual value by name wherever it sits in the string.
+  const namedMatch = trimmed.match(/LEETCODE_SESSION=([^;]+)/);
+  if (namedMatch) {
+    const extracted = namedMatch[1].trim();
+    if (extracted !== trimmed) {
+      console.warn(`[LC] Full cookie header pasted (${trimmed.length} chars) — extracted LEETCODE_SESSION value only (${extracted.length} chars)`);
+    }
+    trimmed = extracted;
+  }
+
+  // CASE 2: the raw session value itself got doubled by an accidental
+  // double-paste. A real LEETCODE_SESSION is one JWT, so a second "eyJ"
+  // header segment showing up well past the start means everything from
+  // there on is a duplicate, not extra legitimate content.
   const secondStart = trimmed.indexOf('eyJ', 50);
   if (secondStart > 0) {
-    console.warn(`[LC] Doubled LEETCODE_SESSION detected — trimming from ${trimmed.length} to ${secondStart} chars`);
-    return trimmed.slice(0, secondStart);
+    console.warn(`[LC] Doubled LEETCODE_SESSION value detected — trimming from ${trimmed.length} to ${secondStart} chars`);
+    trimmed = trimmed.slice(0, secondStart);
   }
+
+  if (trimmed.length < 100) {
+    console.warn(`[LC] LEETCODE_SESSION is only ${trimmed.length} chars after cleanup — that's shorter than a real session token and will likely 401. Re-copy just the LEETCODE_SESSION cookie's VALUE column from DevTools → Application → Cookies (not the whole Cookie header).`);
+  }
+
   return trimmed;
 }
 
 function makeHeaders(sessionCookie = null) {
-  const h = { ...DEFAULT_HEADERS };
+  // FIX (July 2026): GraphQL calls (including submissionDetails, the only
+  // reliable source of code for old submissions) were missing the same
+  // browser-fingerprint headers that were added to REST calls in the June
+  // 2026 WAF fix. Without them, LeetCode's WAF silently 403s these POST
+  // requests — the error was caught and swallowed in fetchSubmissionCode,
+  // so every import ran to completion reporting '0 submissions with code'
+  // with no visible error anywhere. Bringing GraphQL headers in line with
+  // REST headers is the fix.
+  const h = { ...DEFAULT_HEADERS, ...BROWSER_FINGERPRINT_HEADERS };
   if (sessionCookie) {
     const clean = sanitiseSession(sessionCookie);
     h['Cookie']      = `LEETCODE_SESSION=${clean}; csrftoken=ci`;
@@ -67,7 +117,6 @@ function makeHeaders(sessionCookie = null) {
   return h;
 }
 
-// Full browser header set for REST API calls — prevents WAF 403
 function makeRestHeaders(sessionCookie) {
   const clean = sanitiseSession(sessionCookie);
   return {
@@ -97,11 +146,9 @@ async function lcGraphQL(query, variables, sessionCookie = null) {
     }
     throw new Error(`LeetCode GraphQL request failed: ${err.message}`);
   }
-
   if (res.data?.errors?.length) {
     throw new Error(`LeetCode GraphQL error: ${res.data.errors.map(e => e.message).join('; ')}`);
   }
-
   return res.data;
 }
 
@@ -118,7 +165,7 @@ function mapVerdict(statusDisplay) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. RECENT SUBMISSIONS  (public)
+// 1. RECENT SUBMISSIONS (public)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSubmissions(handle, sessionCookie = null, limit = 20) {
@@ -174,10 +221,7 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
       sessionCookie
     );
     const result = data?.data?.userProgressQuestionList;
-    if (!result) {
-      console.warn('[LC] userProgressQuestionList returned null — session may be expired');
-      break;
-    }
+    if (!result) { console.warn('[LC] userProgressQuestionList null — session may be expired'); break; }
     totalNum = result.totalNum ?? 0;
     const questions = result.questions ?? [];
     for (const p of questions) {
@@ -222,24 +266,31 @@ async function fetchRecentAcSubmissions(handle) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. SUBMISSION HISTORY WITH CODE — REST /api/submissions/ (Phase 1B)
+// 3. SUBMISSION HISTORY WITH CODE — REST + submissionDetails enrichment (Phase 1B)
+//
+// KEY FIX: REST /api/submissions/ returns code:"" for submissions >~30 days old.
+// We call submissionDetails GraphQL for every AC submission on the page that
+// has no code, enriching inline before returning to the controller.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function fetchSubmissionHistoryREST(sessionCookie, lastKey = '', limit = 20) {
+export async function fetchSubmissionHistoryREST(sessionCookie, offset = 0, limit = 20) {
   const clean = sanitiseSession(sessionCookie);
-  const url = `${LC_BASE}/api/submissions/?offset=0&limit=${limit}&lastkey=${encodeURIComponent(lastKey)}`;
+  // FIX (July 2026 — broken cursor): LeetCode's `last_key` field was
+  // confirmed to always come back as "" even when has_next is true
+  // ({"has_next":true,"last_key":""}), which made lastkey-based pagination
+  // loop on the exact same page forever. Switched to plain numeric offset
+  // pagination instead, which doesn't depend on that broken field at all.
+  const url = `${LC_BASE}/api/submissions/?offset=${offset}&limit=${limit}`;
 
   let res;
   try {
     res = await axios.get(url, {
       headers: makeRestHeaders(clean),
       timeout: 30000,
-      // Decompress gzip — axios does this automatically but being explicit
       decompress: true,
     });
   } catch (err) {
     if (err.response?.status === 401 || err.response?.status === 403) {
-      // Log the exact status and response body to help diagnose WAF vs auth issues
       console.error(`[LC REST] ${err.response.status} on /api/submissions/. Response:`,
         JSON.stringify(err.response.data || {}).slice(0, 300));
       throw new Error(
@@ -247,44 +298,34 @@ export async function fetchSubmissionHistoryREST(sessionCookie, lastKey = '', li
         'Open leetcode.com → DevTools → Application → Cookies → copy LEETCODE_SESSION and try again.'
       );
     }
-    if (err.response?.status === 429) {
-      throw new Error('LeetCode rate limit hit. Wait a few minutes and try again.');
-    }
+    if (err.response?.status === 429) throw new Error('LeetCode rate limit hit. Wait a few minutes and try again.');
     throw new Error(`LeetCode REST API failed (${err.response?.status ?? 'network'}): ${err.message}`);
   }
 
   const body = res.data;
-  if (!body || typeof body !== 'object') {
-    throw new Error('LeetCode REST API returned unexpected non-JSON format.');
-  }
+  if (!body || typeof body !== 'object') throw new Error('LeetCode REST API returned unexpected non-JSON format.');
 
-  // LeetCode returns this string in the body (not as HTTP 401) when the
-  // session is rejected by the application layer (not the WAF)
   if (body.detail === 'Authentication credentials were not provided.' ||
       body.detail === 'Authentication credentials were not provided') {
-    throw new Error(
-      'LEETCODE_SESSION is expired or invalid. ' +
-      'Open leetcode.com → DevTools → Application → Cookies → copy LEETCODE_SESSION and try again.'
-    );
+    throw new Error('LEETCODE_SESSION is expired or invalid. Open leetcode.com → DevTools → Application → Cookies → copy LEETCODE_SESSION and try again.');
   }
-
-  // Another possible unauthenticated response format
   if (body.error === 'Unauthorized' || body.status === 401) {
-    throw new Error(
-      'LEETCODE_SESSION is expired or invalid. ' +
-      'Open leetcode.com → DevTools → Application → Cookies → copy LEETCODE_SESSION and try again.'
-    );
+    throw new Error('LEETCODE_SESSION is expired or invalid. Open leetcode.com → DevTools → Application → Cookies → copy LEETCODE_SESSION and try again.');
   }
 
   const rawSubs = body.submissions_dump ?? [];
   const hasNext  = body.has_next  ?? false;
-  const nextKey  = body.last_key  ?? '';
 
-  // If we got a 200 but with no submissions_dump field, the session might be
-  // accepted but returning an unexpected shape — log the raw body for diagnosis
   if (!body.submissions_dump) {
-    console.warn('[LC REST] 200 response but no submissions_dump field. Body keys:', Object.keys(body));
+    console.warn('[LC REST] 200 but no submissions_dump. Body keys:', Object.keys(body));
   }
+
+  // DIAGNOSTIC (July 2026): kept so we can see the raw shape at a glance if
+  // anything else about this endpoint's response ever shifts again.
+  const rawTopLevel = Object.fromEntries(
+    Object.entries(body).filter(([, v]) => typeof v !== 'object' || v === null)
+  );
+  console.log(`[LC REST] raw pagination fields:`, JSON.stringify(rawTopLevel));
 
   const submissions = rawSubs.map(s => ({
     platformProblemId: s.title_slug ?? '',
@@ -294,25 +335,57 @@ export async function fetchSubmissionHistoryREST(sessionCookie, lastKey = '', li
     verdict:           mapVerdict(s.status_display),
     language:          s.lang       ?? '',
     submissionId:      String(s.id),
-    code:              s.code       ?? '',
+    // REST purges code for old subs — we enrich below via submissionDetails
+    code:              (s.code && s.code.trim().length > 0) ? s.code.trim() : '',
     runtime:           s.runtime    ?? '',
     memory:            s.memory     ?? '',
   }));
 
-  const withCode = submissions.filter(s => s.code && s.code.trim().length > 0);
-  console.log(`[LC REST] lastKey="${lastKey}": ${submissions.length} subs, ${withCode.length} with code, hasNext=${hasNext}`);
+  // KEY FIX: enrich AC submissions that have no code via submissionDetails
+  const acWithoutCode = submissions.filter(s => s.verdict === 'Accepted' && !s.code);
+  if (acWithoutCode.length > 0) {
+    console.log(`[LC REST] offset ${offset}: ${acWithoutCode.length}/${submissions.length} AC subs need submissionDetails enrichment`);
+    for (const sub of acWithoutCode) {
+      try {
+        const code = await fetchSubmissionCode(sub.submissionId, clean);
+        if (code && code.trim().length > 0) sub.code = code.trim();
+        await new Promise(r => setTimeout(r, 300)); // avoid rate limiting
+      } catch (err) {
+        console.warn(`[LC] submissionDetails failed for sub ${sub.submissionId}: ${err.message}`);
+      }
+    }
+  }
 
-  return { submissions, hasNext, nextKey };
+  const withCode = submissions.filter(s => s.code && s.code.trim().length > 0);
+  console.log(`[LC REST] offset ${offset}: ${submissions.length} subs, ${withCode.length} with code after enrichment, hasNext=${hasNext}`);
+
+  return { submissions, hasNext, nextOffset: offset + submissions.length };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. PER-PROBLEM BEST-AC FETCH — REST /api/submissions/{slug}/ (Phase 1C)
+// 4. fetchSubmissionCodeById — PUBLIC export for Phase 1C fast path
+//
+// When Phase 1C already has a submissionId from MongoDB (put there by Phase 1B),
+// it calls this directly instead of going through the REST per-problem discovery
+// flow (which also returns empty code for old submissions).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchSubmissionCodeById(submissionId, sessionCookie) {
+  return fetchSubmissionCode(submissionId, sessionCookie);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. PER-PROBLEM BEST-AC FETCH — discovery fallback for Phase 1C
+//
+// Used when a problem has no submissionId in MongoDB at all (Phase 1A-only
+// problems, or old problems beyond Phase 1B's REST cursor window).
+// Tries REST per-problem to get the submission ID, then calls submissionDetails.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) {
   const clean = sanitiseSession(sessionCookie);
 
-  // ── Tier 1: REST per-problem ──────────────────────────────────────────────
+  // Tier 1: REST per-problem — for ID discovery + code if recent enough
   try {
     const url = `${LC_BASE}/api/submissions/${encodeURIComponent(titleSlug)}/`;
     const res = await axios.get(url, {
@@ -323,18 +396,41 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
 
     const rawSubs = res.data?.submissions_dump ?? [];
     if (rawSubs.length > 0) {
-      const best = rawSubs.find(s => s.status_display === 'Accepted' && s.code && s.code.trim().length > 0);
-      if (best) {
-        console.log(`[LC] T1 REST "${titleSlug}" sub ${best.id}: ${best.code.length} chars`);
+      const acSubs = rawSubs.filter(s => s.status_display === 'Accepted');
+      if (acSubs.length === 0) {
+        console.warn(`[LC] T1 "${titleSlug}": ${rawSubs.length} subs but none Accepted`);
+        return null;
+      }
+
+      // If REST has code (recent submission), use it directly
+      const bestWithCode = acSubs.find(s => s.code && s.code.trim().length > 0);
+      if (bestWithCode) {
+        console.log(`[LC] T1 REST "${titleSlug}" sub ${bestWithCode.id}: ${bestWithCode.code.length} chars`);
         return {
-          submissionId: String(best.id),
-          submittedAt:  new Date(parseInt(best.timestamp, 10) * 1000),
+          submissionId: String(bestWithCode.id),
+          submittedAt:  new Date(parseInt(bestWithCode.timestamp, 10) * 1000),
           verdict:      'Accepted',
-          language:     best.lang,
-          code:         best.code,
+          language:     bestWithCode.lang,
+          code:         bestWithCode.code,
         };
       }
-      console.warn(`[LC] T1 "${titleSlug}": ${rawSubs.length} subs found but AC code is purged`);
+
+      // REST has no code (old sub) — use submissionDetails with the ID we found
+      const bestAc = acSubs[0];
+      console.log(`[LC] T1 "${titleSlug}": REST code purged for sub ${bestAc.id}, calling submissionDetails`);
+      const code = await fetchSubmissionCode(bestAc.id, clean);
+      if (code && code.trim().length > 0) {
+        console.log(`[LC] T1+Details "${titleSlug}" sub ${bestAc.id}: ${code.length} chars`);
+        return {
+          submissionId: String(bestAc.id),
+          submittedAt:  new Date(parseInt(bestAc.timestamp, 10) * 1000),
+          verdict:      'Accepted',
+          language:     bestAc.lang,
+          code,
+        };
+      }
+
+      console.warn(`[LC] T1 "${titleSlug}" sub ${bestAc.id}: submissionDetails also empty — may be purged by LC`);
       return null;
     }
   } catch (err) {
@@ -346,7 +442,7 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
     }
   }
 
-  // ── Tier 2: GraphQL submissionList + Tier 3: submissionDetails ────────────
+  // Tier 2: GraphQL submissionList (ID discovery) + Tier 3: submissionDetails (code)
   try {
     const listQuery = `
       query submissionListForProblem($offset: Int!, $limit: Int!, $questionSlug: String!) {
@@ -355,24 +451,17 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
         }
       }
     `;
-    const data = await lcGraphQL(
-      listQuery,
-      { offset: 0, limit: 20, questionSlug: titleSlug },
-      clean
-    );
+    const data = await lcGraphQL(listQuery, { offset: 0, limit: 20, questionSlug: titleSlug }, clean);
     const subs = data?.data?.submissionList?.submissions ?? [];
     const best = subs.find(s => s.statusDisplay === 'Accepted');
-    if (!best) {
-      console.warn(`[LC] T2 GraphQL: no AC found for "${titleSlug}"`);
-      return null;
-    }
+    if (!best) { console.warn(`[LC] T2 GraphQL: no AC found for "${titleSlug}"`); return null; }
 
     const code = await fetchSubmissionCode(best.id, clean);
-    if (!code) {
-      console.warn(`[LC] T3 submissionDetails null for "${titleSlug}" sub ${best.id} — purged`);
+    if (!code || code.trim().length === 0) {
+      console.warn(`[LC] T3 submissionDetails empty for "${titleSlug}" sub ${best.id} — purged`);
       return null;
     }
-    console.log(`[LC] T3 submissionDetails "${titleSlug}" sub ${best.id}: ${code.length} chars`);
+    console.log(`[LC] T3 "${titleSlug}" sub ${best.id}: ${code.length} chars`);
     return {
       submissionId: String(best.id),
       submittedAt:  new Date(parseInt(best.timestamp, 10) * 1000),
@@ -390,7 +479,7 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. GRAPHQL FALLBACK: submissionList (no code)
+// 6. GRAPHQL FALLBACK: submissionList (no code)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSubmissionHistory(handle, sessionCookie, offset = 0, limit = 20) {
@@ -404,14 +493,9 @@ export async function fetchSubmissionHistory(handle, sessionCookie, offset = 0, 
   `;
   const data = await lcGraphQL(listQuery, { offset, limit }, sessionCookie);
   const result = data?.data?.submissionList;
-
   if (!result) {
-    throw new Error(
-      'LEETCODE_SESSION is expired or invalid. ' +
-      'Copy a fresh LEETCODE_SESSION from leetcode.com (DevTools → Application → Cookies).'
-    );
+    throw new Error('LEETCODE_SESSION is expired or invalid. Copy a fresh LEETCODE_SESSION from leetcode.com (DevTools → Application → Cookies).');
   }
-
   return {
     submissions: (result.submissions ?? []).map(s => ({
       platformProblemId: s.titleSlug, title: s.title,
@@ -425,8 +509,20 @@ export async function fetchSubmissionHistory(handle, sessionCookie, offset = 0, 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. CODE FOR ONE SUBMISSION (internal)
+// 7. CODE FOR ONE SUBMISSION — submissionDetails GraphQL (internal)
+//
+// THE ONLY reliable source of code for any submission by ID, regardless of age.
+// REST endpoints purge the code field for old submissions; this query does not.
+// Exported publicly as fetchSubmissionCodeById for Phase 1C fast path.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Module-level record of the most recent submissionDetails failure, so
+// callers several layers up (the import controller, ultimately the user)
+// can see *why* code enrichment is failing instead of just seeing zeros.
+let lastCodeFetchError = null;
+export function getLastCodeFetchError() {
+  return lastCodeFetchError;
+}
 
 async function fetchSubmissionCode(submissionId, sessionCookie) {
   const query = `
@@ -445,15 +541,17 @@ async function fetchSubmissionCode(submissionId, sessionCookie) {
     );
     const code = data?.data?.submissionDetails?.code ?? '';
     if (code) console.log(`[LC] submissionDetails ${submissionId}: ${code.length} chars`);
+    else lastCodeFetchError = `submissionDetails for ${submissionId} returned no code (null/empty) with no GraphQL error — LeetCode may be withholding it for this submission.`;
     return code;
   } catch (err) {
+    lastCodeFetchError = `submissionDetails for ${submissionId} threw: ${err.message}`;
     console.warn(`[LC] submissionDetails failed for ${submissionId}: ${err.message}`);
     return '';
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. PROFILE (public)
+// 8. PROFILE (public)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchProfile(handle) {

@@ -290,7 +290,7 @@
               if (rt === 'blob') {
                 var blob = self.response;
                 if (!blob) {
-                  console.warn('[CodeInsight] blob response empty for', submissionId);
+                  console.warn('[CodeInsight] blob response empty for graphql request:', url);
                   return;
                 }
                 var reader = new FileReader();

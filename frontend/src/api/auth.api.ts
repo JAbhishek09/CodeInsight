@@ -43,3 +43,13 @@ export const saveHandles = async (handles: { leetcode?: string; codeforces?: str
 export const logout = () => {
   localStorage.removeItem(TOKEN_KEY);
 };
+
+export const requestPasswordReset = async (email: string) => {
+  const response = await api.post('/auth/forgot-password', { email });
+  return response.data;
+};
+
+export const submitNewPassword = async (token: string, newPassword: string) => {
+  const response = await api.post('/auth/reset-password', { token, newPassword });
+  return response.data;
+};
