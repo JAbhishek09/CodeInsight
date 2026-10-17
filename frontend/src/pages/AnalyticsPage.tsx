@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { difficultyStyle } from '../lib/difficulty';
 import { getProblems } from '../api/problems.api';
 import type { Problem } from '../types/problem';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -40,10 +41,10 @@ import {
 // Platform tab definition
 type PlatformTab = 'all' | 'leetcode' | 'codeforces';
 
-const PLATFORM_TABS: { id: PlatformTab; label: string; color: string; accentClass: string }[] = [
-  { id: 'all',        label: 'All Platforms', color: '#ec4899', accentClass: 'text-pink-400 border-pink-500/20 bg-pink-500/10' },
-  { id: 'leetcode',   label: 'LeetCode',      color: '#fbbf24', accentClass: 'text-amber-400 border-amber-500/20 bg-amber-500/10' },
-  { id: 'codeforces', label: 'Codeforces',    color: '#818cf8', accentClass: 'text-indigo-400 border-indigo-500/20 bg-indigo-500/10' },
+const PLATFORM_TABS: { id: PlatformTab; label: string; accentClass: string }[] = [
+  { id: 'all',        label: 'All Platforms', accentClass: 'text-foreground border-border bg-surface-1' },
+  { id: 'leetcode',   label: 'LeetCode',      accentClass: 'text-foreground border-border bg-surface-1' },
+  { id: 'codeforces', label: 'Codeforces',    accentClass: 'text-foreground border-border bg-surface-1' },
 ];
 
 export default function AnalyticsPage() {
@@ -116,12 +117,12 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-cyan-950/30 border border-cyan-500/20 flex items-center justify-center shrink-0">
-            <BarChart3 className="w-4 h-4 text-cyan-400" />
+          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <BarChart3 className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold text-white">Analytics</h1>
-            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+            <h1 className="text-lg font-extrabold text-foreground">Analytics</h1>
+            <p className="text-[10px] text-subtle uppercase tracking-wider">
               {activePlatform === 'all' ? 'All platforms' : activePlatformDef.label} · {problems.length} problems
             </p>
           </div>
@@ -129,7 +130,7 @@ export default function AnalyticsPage() {
         <button
           onClick={fetchData}
           disabled={loading}
-          className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-mono rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
+          className="px-3.5 py-2 bg-surface-2 hover:bg-surface-3 text-muted-foreground hover:text-foreground border border-border-strong text-xs rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -137,7 +138,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* ── Platform tab switcher ──────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 border-b border-slate-900 pb-1 overflow-x-auto">
+      <div className="flex items-center gap-1.5 border-b border-border pb-1 overflow-x-auto">
         {PLATFORM_TABS.map(({ id, label, accentClass }) => {
           const count = platformCounts[id];
           const isActive = activePlatform === id;
@@ -145,15 +146,15 @@ export default function AnalyticsPage() {
             <button
               key={id}
               onClick={() => setActivePlatform(id)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-xs font-mono font-bold transition-all cursor-pointer shrink-0 border ${
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-t-lg text-xs  font-bold transition-all cursor-pointer shrink-0 border ${
                 isActive
                   ? accentClass
-                  : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-900'
+                  : 'text-subtle border-transparent hover:text-muted-foreground hover:bg-surface-2'
               }`}
             >
               {label}
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                isActive ? 'bg-white/10' : 'bg-slate-900 text-slate-600'
+                isActive ? 'bg-surface-3 text-foreground' : 'bg-surface-2 text-faint'
               }`}>
                 {count}
               </span>
@@ -163,9 +164,9 @@ export default function AnalyticsPage() {
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-[300px] border border-slate-900 rounded-2xl">
-          <RefreshCw className="w-8 h-8 animate-spin text-pink-500" />
-          <p className="text-xs font-mono text-slate-500 mt-4 uppercase tracking-wider">Loading analytics...</p>
+        <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-xs text-subtle mt-4 uppercase tracking-wider">Loading analytics...</p>
         </div>
       ) : isEmpty ? (
         <EmptyState
@@ -195,23 +196,23 @@ export default function AnalyticsPage() {
 
           {/* ── LeetCode-specific: difficulty breakdown bars ──────────────── */}
           {activePlatform === 'leetcode' && (
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Trophy className="text-amber-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">LeetCode Difficulty Breakdown</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Trophy className="text-warning w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">LeetCode Difficulty Breakdown</h3>
               </div>
               <div className="space-y-4">
                 {[
-                  { label: 'Easy',   solved: diffBreakdown.easySolved,   total: diffBreakdown.easy,   pct: lcEasySolvedPct,   bar: 'bg-emerald-500', text: 'text-emerald-400' },
-                  { label: 'Medium', solved: diffBreakdown.mediumSolved, total: diffBreakdown.medium, pct: lcMediumSolvedPct, bar: 'bg-amber-500',   text: 'text-amber-400'   },
-                  { label: 'Hard',   solved: diffBreakdown.hardSolved,   total: diffBreakdown.hard,   bar: 'bg-rose-500',    text: 'text-rose-400', pct: lcHardSolvedPct },
+                  { label: 'Easy',   solved: diffBreakdown.easySolved,   total: diffBreakdown.easy,   pct: lcEasySolvedPct,   bar: difficultyStyle('Easy').dot, text: difficultyStyle('Easy').text },
+                  { label: 'Medium', solved: diffBreakdown.mediumSolved, total: diffBreakdown.medium, pct: lcMediumSolvedPct, bar: difficultyStyle('Medium').dot, text: difficultyStyle('Medium').text   },
+                  { label: 'Hard',   solved: diffBreakdown.hardSolved,   total: diffBreakdown.hard,   bar: difficultyStyle('Hard').dot, text: difficultyStyle('Hard').text, pct: lcHardSolvedPct },
                 ].map(d => (
                   <div key={d.label} className="space-y-1.5">
-                    <div className="flex items-center justify-between text-xs font-mono">
+                    <div className="flex items-center justify-between text-xs">
                       <span className={d.text}>{d.label}</span>
-                      <span className="text-slate-400">{d.solved} / {d.total} solved ({d.pct}%)</span>
+                      <span className="text-muted-foreground">{d.solved} / {d.total} solved ({d.pct}%)</span>
                     </div>
-                    <div className="w-full h-2 bg-slate-950 border border-slate-900 rounded-full overflow-hidden">
+                    <div className="w-full h-2 bg-surface-2 border border-border rounded-full overflow-hidden">
                       <div
                         className={`h-full ${d.bar} rounded-full transition-all duration-700`}
                         style={{ width: `${d.total ? d.pct : 0}%` }}
@@ -225,21 +226,21 @@ export default function AnalyticsPage() {
 
           {/* ── Codeforces-specific: verdict breakdown ──────────────────────── */}
           {activePlatform === 'codeforces' && entries.length > 0 && (
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Target className="text-indigo-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Codeforces Verdict Breakdown</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Target className="text-primary w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Codeforces Verdict Breakdown</h3>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 {[
-                  { label: 'Accepted',     value: cfAccepted, icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-emerald-400', bg: 'bg-emerald-950/20 border-emerald-500/20' },
-                  { label: 'Wrong Answer', value: cfWA,       icon: <XCircle className="w-4 h-4" />,      color: 'text-rose-400',    bg: 'bg-rose-950/20 border-rose-500/20'    },
-                  { label: 'Time Limit',   value: cfTLE,      icon: <Clock className="w-4 h-4" />,        color: 'text-amber-400',   bg: 'bg-amber-950/20 border-amber-500/20'  },
+                  { label: 'Accepted',     value: cfAccepted, icon: <CheckCircle2 className="w-4 h-4" />, color: 'text-success', bg: 'bg-success/10 border-success/20' },
+                  { label: 'Wrong Answer', value: cfWA,       icon: <XCircle className="w-4 h-4" />,      color: 'text-danger',    bg: 'bg-danger/10 border-danger/20'    },
+                  { label: 'Time Limit',   value: cfTLE,      icon: <Clock className="w-4 h-4" />,        color: 'text-warning',   bg: 'bg-warning/10 border-warning/20'  },
                 ].map(v => (
                   <div key={v.label} className={`rounded-xl p-4 border ${v.bg} text-center space-y-2`}>
                     <div className={`flex justify-center ${v.color}`}>{v.icon}</div>
-                    <p className={`text-2xl font-extrabold font-mono ${v.color}`}>{v.value}</p>
-                    <p className="text-[10px] font-mono text-slate-500">{v.label}</p>
+                    <p className={`text-2xl font-extrabold tabular-nums ${v.color}`}>{v.value}</p>
+                    <p className="text-[10px] text-subtle">{v.label}</p>
                   </div>
                 ))}
               </div>
@@ -247,28 +248,28 @@ export default function AnalyticsPage() {
           )}
 
           {/* ── Solving Trends ─────────────────────────────────────────────── */}
-          <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-              <TrendingUp className="text-pink-400 w-4 h-4" />
-              <h3 className="text-sm font-bold text-slate-100">Solving Trends</h3>
-              <span className="ml-auto text-[10px] font-mono text-slate-500">Last 6 months</span>
+          <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+            <div className="flex items-center gap-2 border-b border-border pb-4">
+              <TrendingUp className="text-primary w-4 h-4" />
+              <h3 className="text-sm font-bold text-foreground">Solving Trends</h3>
+              <span className="ml-auto text-[10px] text-subtle">Last 6 months</span>
             </div>
             <TrendChart series={solvingTrend} />
           </div>
 
           {/* ── Difficulty + Acceptance Rate ────────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Layers className="text-purple-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Difficulty Trends</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Layers className="text-primary w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Difficulty Trends</h3>
               </div>
               <TrendChart series={diffTrend} />
             </div>
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Percent className="text-indigo-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Acceptance Rate Trend</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Percent className="text-primary w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Acceptance Rate Trend</h3>
               </div>
               <TrendChart series={accTrend} />
             </div>
@@ -276,27 +277,27 @@ export default function AnalyticsPage() {
 
           {/* ── Topic Performance + Language Usage ─────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Layers className="text-cyan-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Topic Performance</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Layers className="text-primary w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Topic Performance</h3>
               </div>
               <TopicBarChart data={topicPerf} />
             </div>
-            <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Code2 className="text-emerald-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Language Usage</h3>
+            <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Code2 className="text-success w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Language Usage</h3>
               </div>
               <TopicBarChart data={languageUsage} />
             </div>
           </div>
 
           {/* ── Weekly Progress ─────────────────────────────────────────────── */}
-          <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-            <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-              <CalendarRange className="text-pink-400 w-4 h-4" />
-              <h3 className="text-sm font-bold text-slate-100">Weekly Progress</h3>
+          <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
+            <div className="flex items-center gap-2 border-b border-border pb-4">
+              <CalendarRange className="text-primary w-4 h-4" />
+              <h3 className="text-sm font-bold text-foreground">Weekly Progress</h3>
             </div>
             <WeeklyLineChart data={weeklyProg} />
           </div>

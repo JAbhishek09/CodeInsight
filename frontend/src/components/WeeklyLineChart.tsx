@@ -30,8 +30,8 @@ export default function WeeklyLineChart({ data }: WeeklyLineChartProps) {
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto overflow-visible">
         <defs>
           <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ec4899" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#ec4899" stopOpacity="0.0" />
+            <stop offset="0%" stopColor="var(--chart-1)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity="0.0" />
           </linearGradient>
         </defs>
 
@@ -42,7 +42,7 @@ export default function WeeklyLineChart({ data }: WeeklyLineChartProps) {
         <polyline
           points={polyline}
           fill="none"
-          stroke="#ec4899"
+          stroke="var(--chart-1)"
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -51,15 +51,15 @@ export default function WeeklyLineChart({ data }: WeeklyLineChartProps) {
         {/* Dots + labels */}
         {points.map((p, i) => (
           <g key={i}>
-            <circle cx={p.x} cy={p.y} r="3.5" fill="#ec4899" />
+            <circle cx={p.x} cy={p.y} r="3.5" fill="var(--chart-1)" stroke="var(--surface-1)" strokeWidth="2" />
             {p.count > 0 && (
               <text
                 x={p.x}
                 y={p.y - 8}
                 textAnchor="middle"
                 fontSize="8"
-                fill="#ec4899"
-                fontFamily="monospace"
+                fill="var(--foreground)"
+                className="tabular-nums"
               >
                 {p.count}
               </text>
@@ -69,8 +69,7 @@ export default function WeeklyLineChart({ data }: WeeklyLineChartProps) {
               y={H}
               textAnchor="middle"
               fontSize="8"
-              fill="#64748b"
-              fontFamily="monospace"
+              fill="var(--text-muted)"
             >
               {p.day}
             </text>

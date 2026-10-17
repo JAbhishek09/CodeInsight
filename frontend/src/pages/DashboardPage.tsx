@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import DifficultyBadge from '../components/DifficultyBadge';
+import { difficultyStyle } from '../lib/difficulty';
 import { useAuth } from '../hooks/useAuth';
 import { getProblems } from '../api/problems.api';
 import type { Problem } from '../types/problem';
@@ -100,26 +102,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
       {/* Compact header — replaces the old oversized welcome banner */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
             Welcome back,{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
+            <span className="text-foreground">
               {(user?.name || 'Developer').split(' ')[0]}
             </span>
           </h1>
-          <p className="text-xs font-mono text-slate-500 mt-1">Here's how your practice is trending.</p>
+          <p className="text-xs text-subtle mt-1">Here's how your practice is trending.</p>
         </div>
         <div className="flex flex-wrap gap-3 shrink-0">
           <button
             onClick={fetchDashboardData}
             disabled={refreshing}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 text-xs font-mono rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
+            className="px-3.5 py-2 bg-surface-2 hover:bg-surface-3 text-muted-foreground hover:text-foreground border border-border-strong text-xs rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
           <button
             onClick={onOpenNewProblem}
-            className="px-4 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:opacity-95 text-white text-xs font-bold rounded-xl shadow-lg inline-flex items-center gap-1.5 cursor-pointer transition-all"
+            className="px-4 py-2 bg-primary hover:opacity-95 text-primary-foreground text-xs font-bold rounded-xl shadow-lg inline-flex items-center gap-1.5 cursor-pointer transition-all"
           >
             <Plus className="w-4 h-4" />
             Track Problem
@@ -128,9 +130,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-[300px] border border-slate-900 rounded-2xl">
-          <RefreshCw className="w-8 h-8 animate-spin text-pink-500" />
-          <p className="text-xs font-mono text-slate-500 mt-4 uppercase tracking-wider">Loading stats...</p>
+        <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">
+          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-xs text-subtle mt-4 uppercase tracking-wider">Loading stats...</p>
         </div>
       ) : (
         <>
@@ -167,25 +169,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
           </div>
 
           {/* GitHub-style solve heatmap */}
-          <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-              <Activity className="text-cyan-400 w-4 h-4" />
-              <h3 className="text-sm font-bold text-slate-100">Solve Activity</h3>
+          <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-4">
+              <Activity className="text-primary w-4 h-4" />
+              <h3 className="text-sm font-bold text-foreground">Solve Activity</h3>
             </div>
             <Heatmap data={heatmapData} />
           </div>
 
           {/* Topic Mastery + Difficulty Breakdown */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-6 bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-950 pb-4">
+            <div className="lg:col-span-6 bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-2">
-                  <Layers className="text-purple-400 w-4 h-4" />
-                  <h3 className="text-sm font-bold text-slate-100">Topic Mastery</h3>
+                  <Layers className="text-primary w-4 h-4" />
+                  <h3 className="text-sm font-bold text-foreground">Topic Mastery</h3>
                 </div>
                 <button
                   onClick={() => onNavigate('/insights')}
-                  className="text-[11px] text-pink-400 hover:text-pink-300 font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
+                  className="text-[11px] text-primary hover:text-primary font-bold inline-flex items-center gap-1 cursor-pointer"
                 >
                   Details <ChevronRight className="w-3 h-3" />
                 </button>
@@ -193,10 +195,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
               <TopicMasteryBars data={topicMastery} limit={6} />
             </div>
 
-            <div className="lg:col-span-6 bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-950 pb-4">
-                <Award className="text-purple-400 w-4 h-4" />
-                <h3 className="text-sm font-bold text-slate-100">Difficulty Breakdown</h3>
+            <div className="lg:col-span-6 bg-card border border-border rounded-2xl p-6 space-y-5">
+              <div className="flex items-center gap-2 border-b border-border pb-4">
+                <Award className="text-primary w-4 h-4" />
+                <h3 className="text-sm font-bold text-foreground">Difficulty Breakdown</h3>
               </div>
               <div className="flex flex-col items-center gap-5">
                 <DifficultyPieChart
@@ -204,16 +206,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
                   medium={difficultyBreakdown.mediumSolved}
                   hard={difficultyBreakdown.hardSolved}
                 />
-                <div className="grid grid-cols-3 gap-3 w-full pt-2 border-t border-slate-950">
+                <div className="grid grid-cols-3 gap-3 w-full pt-2 border-t border-border">
                   {[
-                    { label: 'Easy', solved: difficultyBreakdown.easySolved, total: difficultyBreakdown.easy, color: 'text-emerald-400' },
-                    { label: 'Medium', solved: difficultyBreakdown.mediumSolved, total: difficultyBreakdown.medium, color: 'text-amber-400' },
-                    { label: 'Hard', solved: difficultyBreakdown.hardSolved, total: difficultyBreakdown.hard, color: 'text-rose-400' },
+                    { label: 'Easy', solved: difficultyBreakdown.easySolved, total: difficultyBreakdown.easy, color: difficultyStyle('Easy').text },
+                    { label: 'Medium', solved: difficultyBreakdown.mediumSolved, total: difficultyBreakdown.medium, color: difficultyStyle('Medium').text },
+                    { label: 'Hard', solved: difficultyBreakdown.hardSolved, total: difficultyBreakdown.hard, color: difficultyStyle('Hard').text },
                   ].map((d) => (
-                    <div key={d.label} className="bg-slate-950 p-3 border border-slate-900 rounded-xl text-center">
-                      <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wide">{d.label}</p>
-                      <p className={`text-base font-extrabold mt-1 font-mono ${d.color}`}>
-                        {d.solved}<span className="text-slate-700">/{d.total}</span>
+                    <div key={d.label} className="bg-surface-2 p-3 border border-border rounded-xl text-center">
+                      <p className="text-[10px] text-subtle uppercase tracking-wide">{d.label}</p>
+                      <p className={`text-base font-extrabold mt-1  ${d.color}`}>
+                        {d.solved}<span className="text-faint">/{d.total}</span>
                       </p>
                     </div>
                   ))}
@@ -224,15 +226,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
 
           {/* Recent Activity + AI Insights + Goal / Suggested Problem */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-[#0b0e14] border border-slate-900 rounded-2xl p-6">
-              <div className="flex items-center justify-between border-b border-slate-950 pb-4 mb-2">
+            <div className="lg:col-span-5 bg-card border border-border rounded-2xl p-6">
+              <div className="flex items-center justify-between border-b border-border pb-4 mb-2">
                 <div className="flex items-center gap-2">
-                  <Clock className="text-cyan-400 w-4 h-4" />
-                  <h3 className="text-sm font-bold text-slate-100">Recent Activity</h3>
+                  <Clock className="text-primary w-4 h-4" />
+                  <h3 className="text-sm font-bold text-foreground">Recent Activity</h3>
                 </div>
                 <button
                   onClick={() => onNavigate('/problems')}
-                  className="text-[11px] text-pink-400 hover:text-pink-300 font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
+                  className="text-[11px] text-primary hover:text-primary font-bold inline-flex items-center gap-1 cursor-pointer"
                 >
                   View all <ChevronRight className="w-3 h-3" />
                 </button>
@@ -241,36 +243,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
               {recentActivity.length > 0 ? (
                 <RecentActivityFeed entries={recentActivity} />
               ) : recentProblemsFallback.length > 0 ? (
-                <div className="divide-y divide-slate-950">
+                <div className="divide-y divide-border">
                   {recentProblemsFallback.map((p) => (
                     <button
                       key={p._id}
                       onClick={() => onNavigate('/problems')}
-                      className="w-full flex items-center gap-3 py-3 text-left hover:bg-slate-900/30 transition-colors px-2 -mx-2 rounded-lg group cursor-pointer"
+                      className="w-full flex items-center gap-3 py-3 text-left hover:bg-surface-2 transition-colors px-2 -mx-2 rounded-lg group cursor-pointer"
                     >
-                      <span
-                        className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 ${
-                          p.difficulty === 'Easy'
-                            ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/10'
-                            : p.difficulty === 'Medium'
-                            ? 'bg-amber-950/40 text-amber-400 border border-amber-500/10'
-                            : 'bg-rose-950/40 text-rose-400 border border-rose-500/10'
-                        }`}
-                      >
-                        {p.difficulty}
-                      </span>
+                      <DifficultyBadge difficulty={p.difficulty} className="shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white">{p.title}</p>
-                        <p className="text-[10px] font-mono text-slate-500">{p.status}</p>
+                        <p className="text-xs font-semibold text-foreground truncate group-hover:text-foreground">{p.title}</p>
+                        <p className="text-[10px] text-subtle">{p.status}</p>
                       </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                      <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0" />
                     </button>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-slate-600 text-xs font-mono">
+                <div className="text-center py-8 text-faint text-xs">
                   No problems yet.{' '}
-                  <button onClick={onOpenNewProblem} className="text-pink-400 hover:underline cursor-pointer">
+                  <button onClick={onOpenNewProblem} className="text-primary hover:underline cursor-pointer">
                     Add your first one.
                   </button>
                 </div>
@@ -283,17 +275,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
 
             <div className="lg:col-span-3 space-y-6">
               {/* Compact daily goal meter */}
-              <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-5 space-y-3">
+              <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
                 <div className="flex items-center gap-2">
-                  <Gauge className="text-pink-400 w-4 h-4" />
-                  <h3 className="text-xs font-bold text-slate-100">Daily Goal</h3>
+                  <Gauge className="text-primary w-4 h-4" />
+                  <h3 className="text-xs font-bold text-foreground">Daily Goal</h3>
                 </div>
                 <div className="relative flex items-center justify-center py-2">
                   <svg className="w-20 h-20 transform -rotate-90">
-                    <circle cx="40" cy="40" r="33" className="stroke-slate-950 fill-transparent" strokeWidth="7" />
+                    <circle cx="40" cy="40" r="33" className="stroke-border fill-transparent" strokeWidth="7" />
                     <circle
                       cx="40" cy="40" r="33"
-                      className="stroke-pink-500 fill-transparent transition-all duration-700"
+                      className="stroke-primary fill-transparent transition-all duration-700"
                       strokeWidth="7"
                       strokeDasharray={2 * Math.PI * 33}
                       strokeDashoffset={2 * Math.PI * 33 * (1 - goalPct / 100)}
@@ -301,10 +293,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <p className="text-sm font-black text-white font-mono">{goalPct}%</p>
+                    <p className="text-sm font-black text-foreground">{goalPct}%</p>
                   </div>
                 </div>
-                <p className="text-[10px] font-mono text-slate-500 text-center">
+                <p className="text-[10px] text-subtle text-center">
                   {solvedCount} / {targetGoal} target
                 </p>
               </div>

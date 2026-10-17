@@ -47,15 +47,15 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
           {[0, 1, 2].map((i) => (
             <line key={i} x1={PAD_L} x2={W - PAD_R}
               y1={PAD_T + innerH * (1 - i / 2)} y2={PAD_T + innerH * (1 - i / 2)}
-              stroke="#475569" strokeWidth="1" />
+              stroke="var(--chart-grid)" strokeWidth="1" />
           ))}
           <polyline
             points={`${PAD_L},${PAD_T + innerH} ${PAD_L + innerW * 0.3},${PAD_T + innerH * 0.6} ${PAD_L + innerW * 0.6},${PAD_T + innerH * 0.4} ${PAD_L + innerW},${PAD_T + innerH * 0.7}`}
-            fill="none" stroke="#6366f1" strokeWidth="2" />
+            fill="none" stroke="var(--primary)" strokeWidth="2" />
         </svg>
         {/* Centered message */}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-          <p className="text-xs font-mono text-slate-500 text-center leading-relaxed max-w-[200px]">
+          <p className="text-xs text-subtle text-center leading-relaxed max-w-[200px]">
             Not enough data yet.<br />Keep solving to generate trends!
           </p>
         </div>
@@ -77,7 +77,7 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
       {series.length > 1 && (
         <div className="flex flex-wrap items-center gap-4">
           {series.map((s) => (
-            <div key={s.label} className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+            <div key={s.label} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
               {s.label}
             </div>
@@ -94,8 +94,8 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
           <defs>
             {series.map((s) => (
               <linearGradient key={s.label} id={`grad-${s.label.replace(/\s+/g, '')}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor={s.color} stopOpacity="0.25" />
-                <stop offset="100%" stopColor={s.color} stopOpacity="0.0"  />
+                <stop offset="0%"   style={{ stopColor: s.color }} stopOpacity="0.2" />
+                <stop offset="100%" style={{ stopColor: s.color }} stopOpacity="0.0"  />
               </linearGradient>
             ))}
           </defs>
@@ -105,8 +105,8 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
             const sy = PAD_T + innerH - (v / max) * innerH;
             return (
               <g key={v}>
-                <line x1={PAD_L} x2={W - PAD_R} y1={sy} y2={sy} stroke="#0f172a" strokeWidth="1" />
-                <text x={PAD_L - 4} y={sy + 3} textAnchor="end" fontSize="7" fill="#475569" fontFamily="monospace">
+                <line x1={PAD_L} x2={W - PAD_R} y1={sy} y2={sy} stroke="var(--chart-grid)" strokeWidth="1" />
+                <text x={PAD_L - 4} y={sy + 3} textAnchor="end" fontSize="8" fill="var(--text-muted)" className="tabular-nums">
                   {v}
                 </text>
               </g>
@@ -129,7 +129,7 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
                 <polyline
                   points={polyline}
                   fill="none"
-                  stroke={s.color}
+                  style={{ stroke: s.color }}
                   strokeWidth="2"
                   strokeLinejoin="round"
                   strokeLinecap="round"
@@ -138,8 +138,8 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
                   <circle
                     key={i}
                     cx={p.sx} cy={p.sy} r="4"
-                    fill={p.value > 0 ? s.color : '#1e293b'}
-                    stroke={s.color} strokeWidth="1.5"
+                    style={{ fill: p.value > 0 ? s.color : 'var(--surface-1)', stroke: s.color }}
+                    strokeWidth="1.5"
                     className="cursor-pointer"
                     onMouseEnter={() =>
                       setTooltip({
@@ -160,7 +160,7 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
           {series[0].points.map((p, i) => {
             const { sx } = toSVG(i, 0);
             return (
-              <text key={p.x + i} x={sx} y={H - 4} textAnchor="middle" fontSize="8" fill="#64748b" fontFamily="monospace">
+              <text key={p.x + i} x={sx} y={H - 4} textAnchor="middle" fontSize="8" fill="var(--text-muted)">
                 {p.x}
               </text>
             );
@@ -170,7 +170,7 @@ export default function TrendChart({ series, height = 180, yLabel }: TrendChartP
         {/* Floating tooltip */}
         {tooltip && (
           <div
-            className="absolute pointer-events-none z-10 px-2.5 py-1.5 bg-[#0b0e14] border border-slate-800 rounded-lg text-[10px] font-mono text-slate-200 shadow-xl whitespace-nowrap"
+            className="absolute pointer-events-none z-10 px-2.5 py-1.5 bg-card border border-border-strong rounded-lg text-[10px] text-foreground shadow-xl whitespace-nowrap"
             style={{
               left: `${(tooltip.x / W) * 100}%`,
               top:  `${(tooltip.y / H) * 100}%`,

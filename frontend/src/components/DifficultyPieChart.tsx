@@ -1,3 +1,5 @@
+import { difficultyStyle } from '../lib/difficulty';
+
 interface DifficultyPieChartProps {
   easy: number;
   medium: number;
@@ -14,9 +16,9 @@ export default function DifficultyPieChart({ easy, medium, hard }: DifficultyPie
   const R = 60;
   const CIRC = 2 * Math.PI * R;
   const segments = [
-    { pct: easyPct,   color: '#10b981', label: 'Easy'   },
-    { pct: mediumPct, color: '#f59e0b', label: 'Medium' },
-    { pct: hardPct,   color: '#f43f5e', label: 'Hard'   },
+    { pct: easyPct,   color: difficultyStyle('Easy').color, label: 'Easy'   },
+    { pct: mediumPct, color: difficultyStyle('Medium').color, label: 'Medium' },
+    { pct: hardPct,   color: difficultyStyle('Hard').color, label: 'Hard'   },
   ];
 
   let offset = 0;
@@ -31,13 +33,13 @@ export default function DifficultyPieChart({ easy, medium, hard }: DifficultyPie
   return (
     <div className="flex items-center gap-6">
       <svg width="140" height="140" viewBox="0 0 140 140" className="-rotate-90">
-        <circle cx="70" cy="70" r={R} fill="none" stroke="#0f172a" strokeWidth="20" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="20" />
         {total > 1 && arcs.map((a, i) => (
           <circle
             key={i}
             cx="70" cy="70" r={R}
             fill="none"
-            stroke={a.color}
+            style={{ stroke: a.color }}
             strokeWidth="20"
             strokeDasharray={`${a.dash} ${a.gap}`}
             strokeDashoffset={-a.offset}
@@ -45,20 +47,20 @@ export default function DifficultyPieChart({ easy, medium, hard }: DifficultyPie
           />
         ))}
         {total === 1 && (
-          <circle cx="70" cy="70" r={R} fill="none" stroke="#1e293b" strokeWidth="20" />
+          <circle cx="70" cy="70" r={R} fill="none" stroke="var(--surface-3)" strokeWidth="20" />
         )}
       </svg>
 
       <div className="space-y-3">
         {[
-          { label: 'Easy',   count: easy,   color: 'text-emerald-400', dot: 'bg-emerald-400' },
-          { label: 'Medium', count: medium, color: 'text-amber-400',   dot: 'bg-amber-400'   },
-          { label: 'Hard',   count: hard,   color: 'text-rose-400',    dot: 'bg-rose-400'    },
+          { ...difficultyStyle('Easy'),   count: easy },
+          { ...difficultyStyle('Medium'), count: medium },
+          { ...difficultyStyle('Hard'),   count: hard },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${item.dot} flex-shrink-0`} />
-            <span className="text-xs font-mono text-slate-400">{item.label}</span>
-            <span className={`text-xs font-mono font-bold ${item.color} ml-auto`}>{item.count}</span>
+            <span className="text-xs text-muted-foreground">{item.label}</span>
+            <span className={`text-xs  font-bold ${item.text} ml-auto tabular-nums`}>{item.count}</span>
           </div>
         ))}
       </div>

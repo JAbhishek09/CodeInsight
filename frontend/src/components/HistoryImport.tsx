@@ -250,24 +250,23 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
 
   return (
     <section className="ci-card relative overflow-hidden">
-      <div className="ci-gradient-bar" />
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="p-5 sm:p-6 border-b border-[var(--ci-border)]">
+      <div className="p-5 sm:p-6 border-b border-[var(--border)]">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
-              <Download className="w-4.5 h-4.5 text-amber-400" />
+            <div className="w-10 h-10 rounded-xl bg-warning/10 border border-warning/20 flex items-center justify-center shrink-0">
+              <Download className="w-4.5 h-4.5 text-warning" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-extrabold text-[var(--ci-text-primary)]">Import from LeetCode</h3>
-              <p className="text-xs text-[var(--ci-text-secondary)] truncate">
-                Linked account: <span className="font-mono font-semibold text-[var(--ci-text-primary)]">{handle ?? '—'}</span>
+              <h3 className="text-sm font-extrabold text-[var(--foreground)]">Import from LeetCode</h3>
+              <p className="text-xs text-[var(--text-secondary)] truncate">
+                Linked account: <span className="font-semibold text-[var(--foreground)]">{handle ?? '—'}</span>
               </p>
             </div>
           </div>
           {lastHistoryImportAt && (
-            <span className="text-[11px] text-[var(--ci-text-muted)] font-mono">
+            <span className="text-[11px] text-[var(--text-muted)]">
               Last import {new Date(lastHistoryImportAt).toLocaleDateString()}
             </span>
           )}
@@ -277,14 +276,14 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
         {hasData && (
           <div className="mt-5">
             <div className="flex items-baseline justify-between gap-3 mb-2">
-              <p className="text-xs text-[var(--ci-text-secondary)]">
-                <span className="text-lg font-extrabold text-[var(--ci-text-primary)] mr-1">{withCode}</span>
+              <p className="text-xs text-[var(--text-secondary)]">
+                <span className="text-lg font-extrabold text-[var(--foreground)] mr-1">{withCode}</span>
                 of {solved} solved problems have code
               </p>
-              <span className={`text-xs font-bold ${pct === 100 ? 'text-emerald-400' : 'text-[var(--ci-text-secondary)]'}`}>{pct}%</span>
+              <span className={`text-xs font-bold ${pct === 100 ? 'text-success' : 'text-[var(--text-secondary)]'}`}>{pct}%</span>
             </div>
-            <div className="h-1.5 rounded-full bg-[var(--ci-bg-elevated)] overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+            <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
+              <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )}
@@ -293,7 +292,7 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
       <div className="p-5 sm:p-6 space-y-5">
         {/* ── Session input ─────────────────────────────────────────────────── */}
         <div className="space-y-2">
-          <label htmlFor="lc-session" className="block text-xs font-bold text-[var(--ci-text-primary)]">
+          <label htmlFor="lc-session" className="block text-xs font-bold text-[var(--foreground)]">
             Your LeetCode session
           </label>
           <div className="relative">
@@ -312,15 +311,15 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
               type="button"
               onClick={() => setShowCookie(v => !v)}
               aria-label={showCookie ? 'Hide session' : 'Show session'}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--ci-text-muted)] hover:text-[var(--ci-text-primary)]"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--foreground)]"
             >
               {showCookie ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
 
           {verifiedAs && (
-            <p className="flex items-center gap-1.5 text-[11px] text-emerald-400">
-              <ShieldCheck className="w-3.5 h-3.5" /> Session belongs to <span className="font-mono font-bold">{verifiedAs}</span>
+            <p className="flex items-center gap-1.5 text-[11px] text-success">
+              <ShieldCheck className="w-3.5 h-3.5" /> Session belongs to <span className="font-bold">{verifiedAs}</span>
             </p>
           )}
 
@@ -328,23 +327,23 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
             type="button"
             onClick={() => setShowHelp(v => !v)}
             aria-expanded={showHelp}
-            className="flex items-center gap-1 text-[11px] text-[var(--ci-text-secondary)] hover:text-[var(--ci-text-primary)]"
+            className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--foreground)]"
           >
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showHelp ? 'rotate-180' : ''}`} />
             Where do I find this?
           </button>
           {showHelp && (
-            <ol className="text-[11px] text-[var(--ci-text-secondary)] space-y-1.5 bg-[var(--ci-bg-surface)] border border-[var(--ci-border)] rounded-xl p-3.5 list-decimal list-inside">
+            <ol className="text-[11px] text-[var(--text-secondary)] space-y-1.5 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl p-3.5 list-decimal list-inside">
               <li>
                 Open{' '}
-                <a href="https://leetcode.com" target="_blank" rel="noopener noreferrer" className="text-pink-400 hover:underline inline-flex items-center gap-0.5">
+                <a href="https://leetcode.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
                   leetcode.com <ExternalLink className="w-3 h-3" />
                 </a>{' '}
-                and sign in as <span className="font-mono font-semibold">{handle}</span>.
+                and sign in as <span className="font-semibold">{handle}</span>.
               </li>
-              <li>Press <kbd className="px-1 rounded bg-[var(--ci-bg-elevated)] font-mono">F12</kbd> → <b>Application</b> → <b>Cookies</b> → https://leetcode.com.</li>
-              <li>Copy the <b>Value</b> of <span className="font-mono">LEETCODE_SESSION</span> and paste it above.</li>
-              <li className="list-none text-[var(--ci-text-muted)] pt-1">It's only used for this import and isn't saved.</li>
+              <li>Press <kbd className="px-1 rounded bg-[var(--surface-3)]">F12</kbd> → <b>Application</b> → <b>Cookies</b> → https://leetcode.com.</li>
+              <li>Copy the <b>Value</b> of <span className="">LEETCODE_SESSION</span> and paste it above.</li>
+              <li className="list-none text-[var(--text-muted)] pt-1">It's only used for this import and isn't saved.</li>
             </ol>
           )}
         </div>
@@ -360,7 +359,7 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
             {hasData ? 'Update my LeetCode history' : 'Import my LeetCode history'}
           </button>
         ) : (
-          <div className="rounded-xl border border-[var(--ci-border)] bg-[var(--ci-bg-surface)] p-4 space-y-4" aria-live="polite">
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-4" aria-live="polite">
             {/* Stepper */}
             <ol className="grid grid-cols-4 gap-2">
               {STAGES.map((s, i) => {
@@ -368,10 +367,10 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
                 return (
                   <li key={s.key} className="space-y-1.5">
                     <div className={`h-1 rounded-full ${
-                      state === 'done' ? 'bg-emerald-400' : state === 'active' ? 'bg-pink-500 animate-pulse' : 'bg-[var(--ci-bg-elevated)]'
+                      state === 'done' ? 'bg-success' : state === 'active' ? 'bg-primary animate-pulse' : 'bg-[var(--surface-3)]'
                     }`} />
                     <p className={`text-[10px] leading-tight ${
-                      state === 'todo' ? 'text-[var(--ci-text-muted)]' : 'text-[var(--ci-text-primary)] font-semibold'
+                      state === 'todo' ? 'text-[var(--text-muted)]' : 'text-[var(--foreground)] font-semibold'
                     }`}>{s.label}</p>
                   </li>
                 );
@@ -379,15 +378,15 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
             </ol>
 
             <div className="flex items-center justify-between gap-3">
-              <p className="flex items-center gap-2 text-xs text-[var(--ci-text-secondary)] min-w-0">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-pink-400 shrink-0" />
+              <p className="flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
                 <span className="truncate">{stageDetail}</span>
               </p>
               <button onClick={handleStop} className="ci-btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0">
                 <Square className="w-3 h-3" /> Stop
               </button>
             </div>
-            <p className="text-[10px] text-[var(--ci-text-muted)]">
+            <p className="text-[10px] text-[var(--text-muted)]">
               Large histories take a few minutes. Keep this window open until it finishes.
             </p>
           </div>
@@ -395,11 +394,11 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
 
         {/* ── Messages ──────────────────────────────────────────────────────── */}
         {stage === 'done' && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 text-xs text-emerald-400">
+          <div className="flex items-start gap-2.5 rounded-xl border border-success/20 bg-success/5 p-3.5 text-xs text-success">
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="space-y-0.5">
               <p className="font-bold">Import complete</p>
-              <p className="text-[var(--ci-text-secondary)]">
+              <p className="text-[var(--text-secondary)]">
                 {scanned.toLocaleString()} submissions scanned
                 {solved > 0 && <> · {withCode} of {solved} solved problems have code</>}
                 {unavailable > 0 && <> · {unavailable} have no accepted solution on LeetCode</>}
@@ -408,28 +407,28 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
           </div>
         )}
         {notice && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-400">
+          <div className="flex items-start gap-2.5 rounded-xl border border-warning/20 bg-warning/5 p-3.5 text-xs text-warning">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{notice}</span>
           </div>
         )}
         {actionResult && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3.5 text-xs text-emerald-400">
+          <div className="flex items-start gap-2.5 rounded-xl border border-success/20 bg-success/5 p-3.5 text-xs text-success">
             <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /><span>{actionResult}</span>
           </div>
         )}
         {error && (
-          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3.5 text-xs text-rose-400">
+          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger/20 bg-danger/5 p-3.5 text-xs text-danger">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{error}</span>
           </div>
         )}
 
         {/* ── More options ──────────────────────────────────────────────────── */}
-        <div className="border-t border-[var(--ci-border)] pt-4">
+        <div className="border-t border-[var(--border)] pt-4">
           <button
             type="button"
             onClick={() => { setShowMore(v => !v); setConfirmRemove(false); }}
             aria-expanded={showMore}
-            className="flex items-center gap-1 text-xs text-[var(--ci-text-secondary)] hover:text-[var(--ci-text-primary)]"
+            className="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--foreground)]"
           >
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
             More options
@@ -437,10 +436,10 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
 
           {showMore && (
             <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--ci-border)] p-3.5">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3.5">
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-[var(--ci-text-primary)]">Refresh tags & difficulty</p>
-                  <p className="text-[11px] text-[var(--ci-text-muted)]">Re-fetch topic tags and difficulty for every problem. Needs the session above.</p>
+                  <p className="text-xs font-bold text-[var(--foreground)]">Refresh tags & difficulty</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Re-fetch topic tags and difficulty for every problem. Needs the session above.</p>
                 </div>
                 <button
                   onClick={handleRefreshTags}
@@ -452,10 +451,10 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
                 </button>
               </div>
 
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-rose-500/20 p-3.5">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/20 p-3.5">
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-rose-400">Remove imported LeetCode data</p>
-                  <p className="text-[11px] text-[var(--ci-text-muted)]">
+                  <p className="text-xs font-bold text-danger">Remove imported LeetCode data</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
                     Deletes all LeetCode problems, code and analysis from this account. Codeforces and manual entries stay.
                   </p>
                 </div>
@@ -463,7 +462,7 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
                   onClick={handleRemove}
                   disabled={running || busyAction !== null || !hasData}
                   className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg shrink-0 font-semibold disabled:opacity-40 transition-colors ${
-                    confirmRemove ? 'bg-rose-600 text-white hover:bg-rose-500' : 'border border-rose-500/30 text-rose-400 hover:bg-rose-500/10'
+                    confirmRemove ? 'bg-danger text-on-solid hover:bg-danger/90' : 'border border-danger/30 text-danger hover:bg-danger/10'
                   }`}
                 >
                   {busyAction === 'remove' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}

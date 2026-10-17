@@ -5,7 +5,7 @@ export default function InlineCode({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         part.startsWith('`') && part.endsWith('`') ? (
-          <code key={i} className="px-1 py-0.5 rounded bg-slate-800 text-pink-300 font-mono text-[11px]">
+          <code key={i} className="px-1 py-0.5 rounded bg-surface-3 text-primary font-mono text-[11px]">
             {part.slice(1, -1)}
           </code>
         ) : (

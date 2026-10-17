@@ -40,7 +40,7 @@ export default function Navbar() {
             {/* Hamburger (mobile) */}
             <button
               onClick={() => setMobileNavOpen(true)}
-              className="lg:hidden p-1.5 rounded-lg text-secondary hover:text-primary hover:bg-surface ci-btn-secondary border-0 cursor-pointer transition-colors"
+              className="lg:hidden p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-surface-2 ci-btn-secondary border-0 cursor-pointer transition-colors"
               aria-label="Open navigation"
             >
               <Menu className="w-5 h-5" />
@@ -51,14 +51,14 @@ export default function Navbar() {
               onClick={() => navigate('/dashboard')}
               className="flex items-center gap-2 shrink-0 cursor-pointer"
             >
-              <Brain className="w-5 h-5 text-pink-400" />
-              <span className="font-extrabold text-sm text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 hidden sm:block">
+              <Brain className="w-5 h-5 text-primary" />
+              <span className="font-extrabold text-sm text-foreground hidden sm:block">
                 CodeInsight
               </span>
             </button>
 
             {/* Divider */}
-            <div className="hidden lg:block w-px h-5 bg-[var(--ci-border)]" />
+            <div className="hidden lg:block w-px h-5 bg-[var(--border)]" />
 
             {/* Nav links (desktop) */}
             <div className="hidden lg:flex items-center gap-0.5 flex-1">
@@ -80,7 +80,7 @@ export default function Navbar() {
               {/* Import CTA */}
               <button
                 onClick={() => setImportOpen(true)}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold rounded-lg transition-colors cursor-pointer shrink-0"
               >
                 <Download className="w-3.5 h-3.5" />
                 Import
@@ -101,24 +101,24 @@ export default function Navbar() {
               {/* Settings */}
               <button
                 onClick={() => navigate('/profile')}
-                className={`ci-theme-btn ${isActive('/profile') ? '!text-pink-400 !border-pink-500/20 !bg-pink-500/10' : ''}`}
+                className={`ci-theme-btn ${isActive('/profile') ? '!text-primary !border-primary/20 !bg-primary/10' : ''}`}
                 title="Settings"
               >
                 <Settings className="w-3.5 h-3.5" />
               </button>
 
               {/* Divider */}
-              <div className="w-px h-5 bg-[var(--ci-border)]" />
+              <div className="w-px h-5 bg-[var(--border)]" />
 
               {/* Avatar */}
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-500 flex items-center justify-center text-white text-[10px] font-extrabold shrink-0 hidden sm:flex select-none">
+              <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-[10px] font-extrabold shrink-0 hidden sm:flex select-none">
                 {initials}
               </div>
 
               {/* Logout */}
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-mono text-[var(--ci-text-muted)] hover:text-rose-400 hover:bg-rose-950/20 transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-[var(--text-muted)] hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span className="hidden sm:block">Logout</span>

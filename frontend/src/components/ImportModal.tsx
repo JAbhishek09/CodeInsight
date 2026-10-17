@@ -38,18 +38,17 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
       <div role="dialog" aria-modal="true" aria-labelledby="import-modal-title" className="relative w-full max-w-2xl ci-card shadow-2xl overflow-hidden">
 
         {/* Gradient top bar */}
-        <div className="ci-gradient-bar" />
 
         {/* Header */}
-        <div className="px-6 pt-6 pb-4 border-b border-[var(--ci-border)]">
+        <div className="px-6 pt-6 pb-4 border-b border-[var(--border)]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
-                <Download className="w-4 h-4 text-indigo-400" />
+              <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                <Download className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <h2 id="import-modal-title" className="text-sm font-extrabold text-[var(--ci-text-primary)]">Import History</h2>
-                <p className="text-[10px] font-mono text-[var(--ci-text-muted)]">LeetCode · Codeforces sync</p>
+                <h2 id="import-modal-title" className="text-sm font-extrabold text-[var(--foreground)]">Import History</h2>
+                <p className="text-[10px] text-[var(--text-muted)]">LeetCode · Codeforces sync</p>
               </div>
             </div>
             <button
@@ -67,9 +66,9 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
 
           {/* Warning if not connected */}
           {(!user?.leetcodeHandle && !user?.codeforcesHandle) && (
-            <div className="flex items-start gap-2.5 bg-amber-500/8 border border-amber-500/20 rounded-xl px-4 py-3">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-[11px] font-mono text-amber-400 leading-relaxed">
+            <div className="flex items-start gap-2.5 bg-warning/8 border border-warning/20 rounded-xl px-4 py-3">
+              <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+              <p className="text-[11px] text-warning leading-relaxed">
                 Connect your platform handles below before importing.
               </p>
             </div>
@@ -93,7 +92,7 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
           )}
 
           {!user?.leetcodeHandle && (
-            <p className="text-center py-4 text-xs font-mono text-[var(--ci-text-muted)]">
+            <p className="text-center py-4 text-xs text-[var(--text-muted)]">
               Set your LeetCode handle above to unlock full history import.
             </p>
           )}
