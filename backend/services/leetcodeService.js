@@ -29,6 +29,7 @@
  */
 
 import axios from 'axios';
+import crypto from 'crypto';
 
 const LC_BASE    = 'https://leetcode.com';
 const LC_GRAPHQL = `${LC_BASE}/graphql`;
@@ -128,6 +129,27 @@ function makeRestHeaders(sessionCookie) {
   };
 }
 
+/**
+ * Which LeetCode user a LEETCODE_SESSION belongs to (null if not signed in).
+ * Cached briefly so paginated import calls don't re-check on every page.
+ */
+const sessionOwnerCache = new Map(); // sha256(session) → { username, at }
+const SESSION_OWNER_TTL_MS = 10 * 60 * 1000;
+
+export async function fetchSessionUsername(sessionCookie) {
+  const key = crypto.createHash('sha256').update(sanitiseSession(sessionCookie)).digest('hex');
+  const cached = sessionOwnerCache.get(key);
+  if (cached && Date.now() - cached.at < SESSION_OWNER_TTL_MS) return cached.username;
+
+  const data = await lcGraphQL(
+    'query globalData { userStatus { isSignedIn username } }', {}, sessionCookie
+  );
+  const status = data?.data?.userStatus;
+  const username = status?.isSignedIn && status.username ? status.username : null;
+  if (username) sessionOwnerCache.set(key, { username, at: Date.now() });
+  return username;
+}
+
 async function lcGraphQL(query, variables, sessionCookie = null) {
   let res;
   try {
@@ -149,6 +171,12 @@ async function lcGraphQL(query, variables, sessionCookie = null) {
     throw new Error(`LeetCode GraphQL error: ${res.data.errors.map(e => e.message).join('; ')}`);
   }
   return res.data;
+}
+
+// LeetCode returns difficulty as 'EASY'/'MEDIUM'/'HARD' from some queries and
+// 'Easy'/'Medium'/'Hard' from others; the app only understands the latter.
+export function normaliseDifficulty(raw) {
+  return { EASY: 'Easy', MEDIUM: 'Medium', HARD: 'Hard' }[String(raw ?? '').toUpperCase()] ?? null;
 }
 
 function mapVerdict(statusDisplay) {
@@ -228,7 +256,7 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
       allProblems.push({
         platformProblemId: p.titleSlug, title: p.title,
         link: `${LC_BASE}/problems/${p.titleSlug}/`,
-        difficulty: p.difficulty ?? 'Medium',
+        difficulty: normaliseDifficulty(p.difficulty) ?? 'Medium',
         tags: (p.topicTags ?? []).map(t => t.name),
         verdict: 'Accepted', submittedAt: null, submissionId: null, language: null, code: '',
       });
@@ -263,7 +291,7 @@ export async function fetchQuestionMeta(slugs, sessionCookie = null) {
         if (!q?.titleSlug) continue;
         meta.set(q.titleSlug, {
           title: q.title,
-          difficulty: q.difficulty,
+          difficulty: normaliseDifficulty(q.difficulty),
           tags: (q.topicTags ?? []).map(t => t.name),
         });
       }

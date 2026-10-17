@@ -1,5 +1,6 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import User from '../models/User.js';
+import Problem from '../models/Problem.js';
 import generateToken from '../utils/generateToken.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
 import crypto from 'crypto';
@@ -252,6 +253,27 @@ export const saveHandles = asyncHandler(async (req, res) => {
         );
       }
       updateData.codeforcesHandle = parsed;
+    }
+  }
+
+  // One account = one LeetCode/Codeforces user. Switching to a different user
+  // while the old one's problems are still here would mix two people's data.
+  const current = await User.findById(req.user._id).select('leetcodeHandle codeforcesHandle');
+  const switches = [
+    ['leetcode', 'leetcodeHandle', 'LeetCode'],
+    ['codeforces', 'codeforcesHandle', 'Codeforces'],
+  ];
+  for (const [platform, field, label] of switches) {
+    const next = updateData[field];
+    const prev = current?.[field];
+    if (next === undefined || !prev || (next ?? '').toLowerCase() === prev.toLowerCase()) continue;
+    const existing = await Problem.countDocuments({ user: req.user._id, platform });
+    if (existing > 0) {
+      res.status(409);
+      throw new Error(
+        `Your account already has ${existing} problems from ${label} user "${prev}". ` +
+        `Remove that imported data first (Import → Remove imported data), then link a different user.`
+      );
     }
   }
 

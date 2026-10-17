@@ -1,6 +1,8 @@
 /**
  * import.routes.js
  *
+ * POST /api/import/leetcode/verify-session — which LeetCode user a pasted session belongs to
+ * DELETE /api/import/leetcode              — remove all imported LeetCode problems for this account
  * POST /api/import/leetcode/problems       — full AC problem list (session optional but recommended)
  * POST /api/import/leetcode/code           — paginated submission code (session required)
  * POST /api/import/leetcode/backfill       — code for each solved problem still missing it (cursor-paged)
@@ -18,6 +20,8 @@ import {
   backfillMissingCode,
   getCodeCoverageStatus,
   repairDifficulty,
+  verifyLeetcodeSession,
+  removeLeetcodeData,
 } from '../controllers/import.controller.js';
 import rateLimit from 'express-rate-limit';
 
@@ -45,6 +49,8 @@ const repairLimiter = rateLimit({
   message: { success: false, message: 'Repair already in progress. Please wait an hour.' },
 });
 
+router.post('/leetcode/verify-session',    protect, backfillLimiter,       verifyLeetcodeSession);
+router.delete('/leetcode',                 protect,                        removeLeetcodeData);
 router.post('/leetcode/problems',          protect, problemsImportLimiter, importLeetcodeProblems);
 router.post('/leetcode/code',              protect, codeImportLimiter,     importLeetcodeCode);
 router.post('/leetcode/backfill',          protect, backfillLimiter,       backfillMissingCode);

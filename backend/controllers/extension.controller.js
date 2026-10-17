@@ -3,6 +3,7 @@ import Problem from '../models/Problem.js';
 import Nonce from '../models/Nonce.js';
 import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
+import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -53,6 +54,25 @@ async function checkAndConsumeNonce(nonce) {
  */
 export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+
+  // ── 0. Submission must come from this profile's LeetCode account ─────────────
+  // The extension reads the signed-in LeetCode username from LeetCode itself.
+  // Without this check, using LeetCode as someone else mixes their submissions
+  // into this account.
+  const handle = parseLeetcodeHandle(req.user.leetcodeHandle);
+  const lcUser = req.body?.leetcodeUsername;
+  if (!handle) {
+    res.status(400);
+    throw new Error('Set your LeetCode username in CodeInsight before syncing submissions.');
+  }
+  if (typeof lcUser !== 'string' || !lcUser) {
+    res.status(400);
+    throw new Error('Extension is out of date — reload the CodeInsight extension.');
+  }
+  if (lcUser.toLowerCase() !== handle.toLowerCase()) {
+    res.status(403);
+    throw new Error(`Submission is from LeetCode user "${lcUser}", but this account is linked to "${handle}".`);
+  }
 
   // ── 1. Replay attack prevention (MongoDB-backed nonce) ───────────────────────
   const { _nonce, _ts } = req.body;

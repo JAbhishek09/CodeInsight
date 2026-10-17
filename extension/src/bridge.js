@@ -60,6 +60,7 @@
     '    lang { name }' +
     '    question { titleSlug title }' +
     '  }' +
+    '  userStatus { isSignedIn username }' +
     '}';
 
   console.log('[CodeInsight Bridge] v1.5.0 static bridge loaded:', location.href);
@@ -104,6 +105,8 @@
       .then(function (json) {
         var sd = json && json.data && json.data.submissionDetails;
         if (!sd) throw new Error('submissionDetails unavailable');
+        var us = json.data.userStatus;
+        if (!us || !us.isSignedIn || !us.username) throw new Error('not signed in to LeetCode');
 
         var verdict = STATUS_CODE_MAP[sd.statusCode];
         var slug    = sd.question && sd.question.titleSlug;
@@ -116,6 +119,9 @@
         return {
           problemSlug:  slug,
           submissionId: String(submissionId),
+          // Backend rejects submissions from a LeetCode user other than the
+          // one linked to the CodeInsight account.
+          leetcodeUsername: us.username,
           title:        (sd.question.title || slug).slice(0, 200),
           verdict:      verdict,
           language:     normaliseLanguage(lang),

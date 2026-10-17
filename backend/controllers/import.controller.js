@@ -28,6 +28,71 @@ import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 import * as lc from '../services/leetcodeService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Session ownership
+//
+// One CodeInsight account = one LeetCode account. Every import call checks that
+// the pasted LEETCODE_SESSION belongs to the LeetCode user on this profile —
+// otherwise another person's problems and code get mixed into this account.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function assertSessionOwner(res, handle, sessionCookie) {
+  let owner;
+  try {
+    owner = await lc.fetchSessionUsername(sessionCookie);
+  } catch (err) {
+    res.status(502);
+    throw new Error(`Could not verify your LeetCode session: ${err.message}`);
+  }
+  if (!owner) {
+    res.status(401);
+    throw new Error('This LEETCODE_SESSION is expired or invalid. Copy a fresh one from leetcode.com and try again.');
+  }
+  if (owner.toLowerCase() !== String(handle).toLowerCase()) {
+    res.status(403);
+    throw new Error(
+      `This session belongs to LeetCode user "${owner}", but your profile is linked to "${handle}". ` +
+      'Paste the session from your own LeetCode account.'
+    );
+  }
+  return owner;
+}
+
+/**
+ * @desc    Check which LeetCode user a pasted session belongs to
+ * @route   POST /api/import/leetcode/verify-session
+ */
+export const verifyLeetcodeSession = asyncHandler(async (req, res) => {
+  const user   = await User.findById(req.user._id);
+  const handle = parseLeetcodeHandle(user.leetcodeHandle);
+  if (!handle) { res.status(400); throw new Error('Set your LeetCode username first.'); }
+
+  const { sessionCookie } = req.body ?? {};
+  if (!sessionCookie || typeof sessionCookie !== 'string' || sessionCookie.trim().length < 10) {
+    res.status(400); throw new Error('Paste your LEETCODE_SESSION value.');
+  }
+  const owner = await assertSessionOwner(res, handle, sessionCookie.trim());
+  res.status(200).json({ success: true, username: owner });
+});
+
+/**
+ * @desc    Delete all imported LeetCode problems for this account
+ * @route   DELETE /api/import/leetcode
+ */
+export const removeLeetcodeData = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { deletedCount } = await Problem.deleteMany({ user: userId, platform: 'leetcode' });
+  const solvedCount = await Problem.countDocuments({ user: userId, status: 'Solved' });
+  await User.findByIdAndUpdate(userId, {
+    historyImportStatus: 'none',
+    historyImportCount: 0,
+    lastHistoryImportAt: null,
+    solvedProblemsCount: solvedCount,
+  });
+  console.log(`[Import] Removed ${deletedCount} LeetCode problems for user ${userId}`);
+  res.status(200).json({ success: true, deleted: deletedCount, message: `Removed ${deletedCount} LeetCode problems.` });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Phase 1A — Import solved problem list
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -41,6 +106,7 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
   const { sessionCookie } = req.body;
   const hasSession = sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim().length > 10;
 
+  if (hasSession) await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Import] Problem list for "${handle}" — session: ${hasSession ? 'yes' : 'no'}`);
 
   const problems = await lc.fetchAllSolvedProblems(handle, hasSession ? sessionCookie.trim() : null);
@@ -179,6 +245,7 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
     throw new Error('LEETCODE_SESSION is required.');
   }
 
+  await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Import 1B] REST offset=${offset} for "${handle}"`);
 
   const { submissions, hasNext, nextOffset } = await lc.fetchSubmissionHistoryREST(
@@ -364,6 +431,12 @@ async function fillCodeForProblem(problem, session) {
  * Returns how many problems were updated.
  */
 async function fillMissingMeta(userId, session) {
+  // Repair difficulties stored as 'EASY'/'MEDIUM'/'HARD' by older imports —
+  // the app only understands 'Easy'/'Medium'/'Hard'.
+  for (const [raw, fixed] of [['EASY', 'Easy'], ['MEDIUM', 'Medium'], ['HARD', 'Hard']]) {
+    await Problem.updateMany({ user: userId, platform: 'leetcode', difficulty: raw }, { $set: { difficulty: fixed } });
+  }
+
   const missing = await Problem.find(
     { user: userId, platform: 'leetcode', $or: [{ tags: { $size: 0 } }, { tags: { $exists: false } }] },
     { platformProblemId: 1 }
@@ -392,6 +465,10 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
   if (!sessionCookie || sessionCookie.trim().length < 10) {
     res.status(400); throw new Error('LEETCODE_SESSION is required.');
   }
+  const user   = await User.findById(userId);
+  const handle = parseLeetcodeHandle(user.leetcodeHandle);
+  if (!handle) { res.status(400); throw new Error('No valid LeetCode handle set.'); }
+  await assertSessionOwner(res, handle, sessionCookie.trim());
   if (after != null && !mongoose.isValidObjectId(after)) {
     res.status(400); throw new Error('Invalid cursor.');
   }
@@ -476,6 +553,7 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
     throw new Error('LEETCODE_SESSION is required. This repair needs authenticated data to get real difficulties.');
   }
 
+  await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Repair] Fetching real difficulties for "${handle}"...`);
   const problems = await lc.fetchAllSolvedProblems(handle, sessionCookie.trim());
 

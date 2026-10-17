@@ -1,6 +1,24 @@
 import api from './axiosInstance';
 
 /**
+ * Which LeetCode user a pasted session belongs to. Rejects (403) when it isn't
+ * the LeetCode user linked to this CodeInsight account.
+ */
+export const verifyLeetcodeSession = async (sessionCookie: string): Promise<{ username: string }> => {
+  const res = await api.post('/import/leetcode/verify-session', { sessionCookie });
+  return res.data;
+};
+
+/**
+ * Deletes every imported LeetCode problem for this account (Codeforces and
+ * manual entries are untouched).
+ */
+export const removeLeetcodeData = async (): Promise<{ deleted: number; message: string }> => {
+  const res = await api.delete('/import/leetcode');
+  return res.data;
+};
+
+/**
  * Phase 1A — Import full AC problem list.
  */
 export const importLeetcodeProblems = async (sessionCookie?: string) => {
