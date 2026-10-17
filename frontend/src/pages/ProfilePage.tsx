@@ -85,7 +85,7 @@ function AccountTab() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">Problems to solve per day — drives the Today tile on your dashboard.</p>
+            <p className="text-xs text-muted-foreground">Problems to solve per day — drives the Today tile in Analytics.</p>
           </fieldset>
           <Button type="submit" size="sm" disabled={!dirty || saving || nameInvalid}>
             {saving && <Loader2 className="animate-spin" />} Save changes

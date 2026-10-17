@@ -151,7 +151,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
   );
   const [deleteTarget, setDeleteTarget] = useState<ProblemListItem | null>(null);
 
-  // Dashboard's "Track problem" links here with ?new=1
+  // Links can open the add dialog with ?new=1
   useEffect(() => {
     if (params.get('new') === '1') {
       setFormMode({ kind: 'add' });

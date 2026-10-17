@@ -124,6 +124,7 @@ function invalidateProblemData(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: problemKeys.all });
   qc.invalidateQueries({ queryKey: ['analytics'] });
   qc.invalidateQueries({ queryKey: ['patterns'] });
+  qc.invalidateQueries({ queryKey: ['practice'] });
 }
 
 /**

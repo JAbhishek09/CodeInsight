@@ -10,11 +10,11 @@ interface LoginPageProps {
   onNavigate: (path: string) => void;
 }
 
-/** Where to go after signing in: the page that sent us here, else the dashboard. */
+/** Where to go after signing in: the page that sent us here, else Home. */
 function useReturnPath() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from;
-  return from && from.startsWith('/') && !from.startsWith('/login') ? from : '/dashboard';
+  return from && from.startsWith('/') && !from.startsWith('/login') ? from : '/home';
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {

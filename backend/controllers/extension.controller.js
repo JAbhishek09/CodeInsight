@@ -6,6 +6,8 @@ import { analyzeCode } from '../services/aiService.js';
 import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 import { resolveOnSubmission } from '../services/predictionService.js';
 import { tryConsumeAiQuota } from '../utils/aiQuota.js';
+import { diagnoseProblem } from '../services/diagnosisService.js';
+import { scheduleReview } from '../services/reviewService.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -251,6 +253,16 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
 
   // ── 6. Pattern feedback: close the student's guess for this problem ─────────
   const feedback = await resolveOnSubmission({ userId, slug: problemSlug, submissionId, verdict });
+
+  // Hard-won accept (4+ tries) → re-solve it from scratch in a week
+  // (only on the first accept — re-solving later is the review itself)
+  const acceptedCount = (problem.submissions ?? []).filter((s) => s.verdict === 'Accepted').length;
+  if (verdict === 'Accepted' && acceptedCount === 1) {
+    const dx = diagnoseProblem(problem);
+    if (dx.status === 'solved-with-struggle' && dx.reviewOn) {
+      await scheduleReview(userId, problemSlug, 'struggle', dx.reviewOn);
+    }
+  }
 
   // ── 7. Response ─────────────────────────────────────────────────────────────
   return res.status(201).json({

@@ -1,13 +1,8 @@
-import { Link } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
-import DifficultyBadge from '@/components/DifficultyBadge';
-import VerdictBadge from '@/components/VerdictBadge';
 import { cn } from '@/lib/utils';
 import { difficultyStyle } from '@/lib/difficulty';
-import { relativeTime } from '@/lib/format';
 import type { AnalyticsSummary } from '@/hooks/useAnalytics';
-import type { ProblemListItem } from '@/hooks/useProblems';
 
 export { Panel, PanelLink, Meter, StatTile } from '@/components/panel';
 import { Meter } from '@/components/panel';
@@ -74,52 +69,6 @@ export function DifficultyProgress({ byDifficulty }: { byDifficulty: AnalyticsSu
           </li>
         );
       })}
-    </ul>
-  );
-}
-
-// ── Topics ────────────────────────────────────────────────────────────────────
-
-export function TopicList({ topics, limit = 8 }: { topics: AnalyticsSummary['topics']; limit?: number }) {
-  const top = [...topics].sort((a, b) => b.solved - a.solved).slice(0, limit);
-  if (top.length === 0) return <p className="text-sm text-muted-foreground">No topic data yet — import your history.</p>;
-  const max = Math.max(...top.map((t) => t.solved), 1);
-  return (
-    <ul className="space-y-3">
-      {top.map((t) => (
-        <li key={t.tag} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3 text-sm">
-          <span className="truncate text-foreground" title={t.tag}>{t.tag}</span>
-          <Meter value={t.solved / max} />
-          <span className="tabular-nums text-xs text-muted-foreground" title={`${t.solved} solved of ${t.total} tracked`}>
-            {t.solved}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// ── Recent problems ───────────────────────────────────────────────────────────
-
-export function RecentProblems({ items }: { items: ProblemListItem[] }) {
-  if (items.length === 0) return <p className="text-sm text-muted-foreground">No submissions yet.</p>;
-  return (
-    <ul className="-mx-2 divide-y divide-border">
-      {items.map((p) => (
-        <li key={p._id}>
-          <Link
-            to={`/problems/${p._id}`}
-            className="flex items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-surface-2"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-foreground">{p.title}</p>
-              <p className="text-xs text-muted-foreground">{relativeTime(p.lastSubmittedAt)}</p>
-            </div>
-            <DifficultyBadge difficulty={p.difficulty} className="hidden sm:inline-flex" />
-            {p.latestVerdict && <VerdictBadge verdict={p.latestVerdict} />}
-          </Link>
-        </li>
-      ))}
     </ul>
   );
 }

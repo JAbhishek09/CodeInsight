@@ -1,12 +1,12 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BarChart3, BookOpen, Brain, Download, LayoutDashboard, LogOut, Moon, Network, Sun, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, Brain, Download, House, LogOut, Moon, Network, Sun, UserRound } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/context/ThemeContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 const NAV = [
-  { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+  { to: '/home', label: 'Home', Icon: House },
   { to: '/patterns', label: 'Patterns', Icon: Network },
   { to: '/problems', label: 'Problems', Icon: BookOpen },
   { to: '/analytics', label: 'Analytics', Icon: BarChart3 },
@@ -54,7 +54,7 @@ function Sidebar() {
 
   return (
     <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-surface-1 lg:flex">
-      <Link to="/dashboard" className="flex h-14 items-center gap-2 px-5 text-sm font-semibold text-foreground">
+      <Link to="/home" className="flex h-14 items-center gap-2 px-5 text-sm font-semibold text-foreground">
         <Brain className="size-5 text-primary" aria-hidden /> CodeInsight
       </Link>
 
@@ -106,7 +106,7 @@ function MobileBars() {
   return (
     <>
       <header className="sticky top-0 z-40 flex h-12 items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur lg:hidden">
-        <Link to="/dashboard" className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <Link to="/home" className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Brain className="size-5 text-primary" aria-hidden /> CodeInsight
         </Link>
         <div className="flex items-center gap-1">

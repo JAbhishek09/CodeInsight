@@ -10,6 +10,7 @@ import analyticsRoutes from './routes/analytics.routes.js';
 import patternRoutes from './routes/pattern.routes.js';
 import predictionRoutes from './routes/prediction.routes.js';
 import tutorRoutes from './routes/tutor.routes.js';
+import practiceRoutes from './routes/practice.routes.js';
 import importRoutes from './routes/import.routes.js';
 import diagnoseRoutes from './routes/diagnose.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
@@ -110,6 +111,7 @@ app.use('/api/analytics',  analyticsRoutes);
 app.use('/api/patterns',   patternRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/tutor',      tutorRoutes);
+app.use('/api/practice',   practiceRoutes);
 app.use('/api/import',     importRoutes);
 app.use('/api/diagnose',   diagnoseRoutes);   // DEV ONLY — remove before production
 

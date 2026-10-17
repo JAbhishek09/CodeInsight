@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Line, ComposedChart, XAxis, YAxis } from 
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { Button } from '@/components/ui/button';
 import { DifficultyProgress, Meter, MonthlySolvedChart, Panel, StatTile } from '@/components/dashboard/widgets';
+import Heatmap from '@/components/Heatmap';
 import { languageLabel } from '@/lib/languages';
 import { cn } from '@/lib/utils';
 import type { AnalyticsSummary } from '@/hooks/useAnalytics';
@@ -165,6 +166,31 @@ const VERDICT_ROWS: { key: keyof AnalyticsSummary['verdicts']; label: string; cl
   { key: 'CE', label: 'Compile error', className: 'bg-subtle' },
 ];
 
+// ── Activity heatmap ─────────────────────────────────────────────────────────
+
+function ActivityPanel({ s }: { s: AnalyticsSummary }) {
+  const [mode, setMode] = useState<'solved' | 'submissions'>('solved');
+  const data = Object.fromEntries((mode === 'solved' ? s.solvedByDay : s.submissionsByDay).map((d) => [d.date, d.count]));
+  return (
+    <Panel
+      title="Activity"
+      action={
+        <div className="flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Heatmap shows">
+          {(['solved', 'submissions'] as const).map((m) => (
+            <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
+              className={cn('rounded px-2 py-0.5 capitalize transition-colors',
+                mode === m ? 'bg-surface-3 text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              {m}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <Heatmap data={data} unit={mode === 'solved' ? ['problem solved', 'problems solved'] : ['submission', 'submissions']} />
+    </Panel>
+  );
+}
+
 // ── Tab ───────────────────────────────────────────────────────────────────────
 
 export default function OverviewTab({ s }: { s: AnalyticsSummary }) {
@@ -181,6 +207,8 @@ export default function OverviewTab({ s }: { s: AnalyticsSummary }) {
         />
         <StatTile label="Longest streak" value={`${s.streak.longest} days`} sub={`Current: ${s.streak.current} day${s.streak.current === 1 ? '' : 's'}`} />
       </div>
+
+      <ActivityPanel s={s} />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel title="Solved per month" className="lg:col-span-2">

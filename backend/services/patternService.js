@@ -17,7 +17,7 @@ function statusOf(doc) {
 }
 
 /** slug → { status, problemId } for this student's LeetCode problems in the map. */
-async function progressBySlug(userId, slugs) {
+export async function progressBySlug(userId, slugs) {
   const docs = await Problem.find(
     { user: userId, platform: 'leetcode', platformProblemId: { $in: slugs } },
     { platformProblemId: 1, status: 1, platform: 1, 'submissions.verdict': 1 }

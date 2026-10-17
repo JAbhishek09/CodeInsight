@@ -15,7 +15,7 @@ import { Toaster } from './components/ui/sonner';
 
 // Signed-in pages load on demand so the sign-in screen (and each page) ships
 // only the code it needs — the charts library is the bulk of it.
-const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const HomePage = lazy(() => import('./pages/HomePage'));
 const ProblemsPage = lazy(() => import('./pages/ProblemsPage').then((m) => ({ default: m.ProblemsPage })));
 const ProblemPage = lazy(() => import('./pages/ProblemPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
@@ -49,14 +49,6 @@ function RegisterPageWrapper() {
   const navigate = useNavigate();
   return <RegisterPage onNavigate={navigate} />;
 }
-function DashboardWrapper() {
-  const navigate = useNavigate();
-  return (
-    <AuthLayout>
-      <DashboardPage onNavigate={navigate} onOpenNewProblem={() => navigate('/problems?new=1')} />
-    </AuthLayout>
-  );
-}
 function ProblemsWrapper() {
   const navigate = useNavigate();
   return <AuthLayout><ProblemsPage onNavigate={navigate} /></AuthLayout>;
@@ -79,8 +71,9 @@ export default function App() {
   <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Protected */}
-            <Route path="/dashboard"
-              element={<ProtectedRoute><DashboardWrapper /></ProtectedRoute>} />
+            <Route path="/home"
+              element={<ProtectedRoute><AuthLayout><HomePage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/dashboard" element={<Navigate to="/home" replace />} />
             <Route path="/problems"
               element={<ProtectedRoute><ProblemsWrapper /></ProtectedRoute>} />
             <Route path="/problems/:problemId"

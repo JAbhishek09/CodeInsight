@@ -22,7 +22,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!authLoading && token && user) return <Navigate to="/dashboard" replace />;
+  if (!authLoading && token && user) return <Navigate to="/home" replace />;
 
   const tooShort = password.length > 0 && password.length < 6;
 

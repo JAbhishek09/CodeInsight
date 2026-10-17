@@ -6,6 +6,16 @@
 import Prediction from '../models/Prediction.js';
 import { PATTERNS, PATTERN_KEYS, patternByKey } from '../data/patterns.js';
 import { problemPatternBySlug } from '../data/problemPatterns.js';
+import { scheduleReview } from './reviewService.js';
+
+const RECOGNITION_REVIEW_DAYS = 2;
+/** A missed or unsure guess means the pattern isn't recognised yet — re-solve soon. */
+async function queueIfMissed(userId, pred) {
+  if (!pred?.actual) return;
+  if (pred.isCorrect === false || pred.predicted === UNSURE) {
+    await scheduleReview(userId, pred.slug, 'recognition', Date.now() + RECOGNITION_REVIEW_DAYS * 24 * 60 * 60 * 1000);
+  }
+}
 
 export const UNSURE = 'unsure';
 // An extension prediction older than this no longer belongs to "this attempt".
@@ -80,6 +90,7 @@ export async function recordPrediction({ userId, slug, predicted, source }) {
 
   if (source === 'app') {
     const pred = await Prediction.create({ user: userId, slug, source, predicted, actual, isCorrect, resolvedAt: new Date() });
+    await queueIfMissed(userId, pred);
     return { prediction: pred, feedback: buildFeedback(pred) };
   }
 
@@ -109,6 +120,7 @@ export async function resolveOnSubmission({ userId, slug, submissionId, verdict 
     { $set: { verdict, submissionId: sid, resolvedAt: new Date() } },
     { new: true, sort: { createdAt: -1 } }
   );
+  await queueIfMissed(userId, pred);
   return buildFeedback(pred);
 }
 

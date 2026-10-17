@@ -117,3 +117,30 @@ export interface TutorState {
   failed: { submissionId: string; verdict: string; submittedAt: string }[];
   quota: AiQuota;
 }
+
+/** See backend/services/practiceService.js todayPlan(). */
+export interface PlanItem {
+  kind: 'review' | 'retry' | 'new';
+  slug: string;
+  title: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  pattern: { key: string; name: string };
+  url: string;
+  problemId: string | null;
+  reason: string;
+  reviewId?: string;
+  dueAt?: string;
+}
+
+export interface TodayPlan {
+  date: string;
+  focus: {
+    key: string; name: string; short: string; solved: number; total: number;
+    recognition: { attempts: number; accuracy: number | null } | null;
+  } | null;
+  plan: PlanItem[];
+  doneToday: { slug: string; title: string; problemId: string; pattern: string | null }[];
+  reviews: { due: number; upcomingThisWeek: number };
+  recognition: { attempts: number; accuracy: number | null };
+  patterns: { key: string; name: string; solved: number; total: number; accuracy: number | null }[];
+}
