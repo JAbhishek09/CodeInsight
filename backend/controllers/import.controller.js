@@ -357,6 +357,35 @@ async function fillCodeForProblem(problem, session) {
   return pushed.modifiedCount > 0;
 }
 
+/**
+ * Fills difficulty + topic tags for this user's LeetCode problems that have no
+ * tags yet. LeetCode's solved list (Phase 1A) stops at 600 problems, so
+ * problems beyond that only arrive via the history scan, without metadata.
+ * Returns how many problems were updated.
+ */
+async function fillMissingMeta(userId, session) {
+  const missing = await Problem.find(
+    { user: userId, platform: 'leetcode', $or: [{ tags: { $size: 0 } }, { tags: { $exists: false } }] },
+    { platformProblemId: 1 }
+  ).lean();
+  if (!missing.length) return 0;
+
+  const meta = await lc.fetchQuestionMeta(missing.map(p => p.platformProblemId), session);
+  const ops = [];
+  for (const [slug, m] of meta) {
+    const $set = {};
+    if (['Easy', 'Medium', 'Hard'].includes(m.difficulty)) $set.difficulty = m.difficulty;
+    if (m.tags.length) $set.tags = m.tags;
+    if (Object.keys($set).length) {
+      ops.push({ updateOne: { filter: { user: userId, platform: 'leetcode', platformProblemId: slug }, update: { $set } } });
+    }
+  }
+  if (!ops.length) return 0;
+  const r = await Problem.bulkWrite(ops, { ordered: false });
+  console.log(`[Import] Filled difficulty/tags for ${r.modifiedCount}/${missing.length} problems`);
+  return r.modifiedCount;
+}
+
 export const backfillMissingCode = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const { sessionCookie, after } = req.body ?? {};
@@ -368,6 +397,11 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
   }
 
   const session = sessionCookie.trim();
+
+  // First call of Pass 2: Pass 1 has created every problem from the history,
+  // so this is the point to fill in tags/difficulty the solved list missed.
+  const metaFilled = after ? 0 : await fillMissingMeta(userId, session);
+
   const filter  = needsCodeFilter(userId);
   if (after) filter._id = { $gt: new mongoose.Types.ObjectId(String(after)) };
 
@@ -388,7 +422,9 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
         if (await fillCodeForProblem(problem, session)) filled++;
         else skipped++;
       } catch (err) {
-        if (/expired|401|403/i.test(err.message)) authError = err;
+        // Only a genuinely expired session aborts the batch; 403/429 throttling
+        // just leaves this problem for a later run.
+        if (/expired/i.test(err.message)) authError = err;
         console.warn(`[Import 1C] ✗ "${problem.platformProblemId}": ${err.message}`);
         skipped++;
       }
@@ -414,7 +450,7 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
   const backfillError = (filled === 0 && skipped > 0) ? lc.getLastCodeFetchError() : null;
 
   res.status(200).json({
-    success: true, processed: problems.length, filled, skipped, backfilled: filled,
+    success: true, processed: problems.length, filled, skipped, backfilled: filled, metaFilled,
     remaining, hasMore, nextCursor: lastId,
     ...(backfillError ? { codeEnrichmentError: backfillError } : {}),
     message: hasMore
@@ -486,12 +522,14 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
 
   const result = await Problem.bulkWrite(ops, { ordered: false });
   const fixed  = result.modifiedCount;
+  // The solved list stops at 600 problems — fill the rest individually.
+  const extraFilled = await fillMissingMeta(userId, sessionCookie.trim());
   const withTags = Array.from(infoMap.values()).filter(v => v.tags.length > 0).length;
 
-  console.log(`[Repair] Done. ${fixed}/${ops.length} records updated (${withTags} had tags).`);
+  console.log(`[Repair] Done. ${fixed}/${ops.length} solved-list records updated, ${extraFilled} more filled individually.`);
   res.status(200).json({
-    success: true, fixed, total: ops.length, withTags,
-    message: `Repair complete. Updated ${fixed} of ${ops.length} problems with real difficulties` +
-      (withTags > 0 ? ` and topic tags (${withTags} problems had tags).` : '. No tags came back — session may lack access.'),
+    success: true, fixed, total: ops.length, withTags, extraFilled,
+    message: `Repair complete. Updated ${fixed} of ${ops.length} problems from your solved list` +
+      (extraFilled > 0 ? `, and filled difficulty/tags for ${extraFilled} more problems.` : '.'),
   });
 });

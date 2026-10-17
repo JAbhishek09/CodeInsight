@@ -163,8 +163,18 @@ export default function HistoryImport({
           await new Promise(r => setTimeout(r, backoffMs));
           continue; // retry the SAME offset, don't advance
         }
-        // Either not an auth-shaped error, or we've retried 3 times already —
-        // surface it for real now.
+        // Observed live: LeetCode's history endpoint starts returning 403 after
+        // ~20 rapid pages even though the session is fine. If earlier pages
+        // worked, stop the history scan here and let Pass 2 fetch code per
+        // problem (it uses different endpoints) instead of aborting everything.
+        if (pages > 0) {
+          setEnrichmentWarning(
+            `LeetCode stopped returning submission history after ${fetched} submissions (rate limited). ` +
+            `Continuing with per-problem code fetch.`
+          );
+          return;
+        }
+        // Failed on the very first page — most likely a bad/expired session.
         throw err;
       }
 
@@ -173,7 +183,7 @@ export default function HistoryImport({
       backfilled += data.backfilled ?? 0;
       pages      += 1;
 
-      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
+      if (data.codeEnrichmentError) setEnrichmentWarning(`Code fetch issue: ${data.codeEnrichmentError}`);
 
       setTotalFetched(fetched);
       setTotalAttached(attached);
@@ -229,7 +239,7 @@ export default function HistoryImport({
         continue;
       }
 
-      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
+      if (data.codeEnrichmentError) setEnrichmentWarning(`Code fetch issue: ${data.codeEnrichmentError}`);
 
       totalFilled    += data.filled    ?? 0;
       totalSkipped   += data.skipped   ?? 0;
@@ -561,8 +571,11 @@ export default function HistoryImport({
             <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                Import complete — {totalFetched} submissions scanned, {backfillFilled} problems got code
-                {backfillSkipped > 0 ? ` (${backfillSkipped} unavailable from LeetCode)` : ''}.
+                Import complete — {totalFetched} submissions scanned
+                {coverage && (coverage.solvedProblems ?? 0) > 0
+                  ? `, ${coverage.solvedWithCode}/${coverage.solvedProblems} solved problems now have code`
+                  : ''}
+                {backfillSkipped > 0 ? ` (${backfillSkipped} have no accepted submission on LeetCode)` : ''}.
               </span>
             </div>
           )}
@@ -577,7 +590,7 @@ export default function HistoryImport({
           {enrichmentWarning && !codeError && (
             <div className="flex items-start gap-2 bg-yellow-950/20 border border-yellow-500/20 rounded-lg p-3 text-[11px] font-mono text-yellow-400">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>Code fetch is silently failing: {enrichmentWarning}</span>
+              <span>{enrichmentWarning}</span>
             </div>
           )}
         </div>

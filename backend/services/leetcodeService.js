@@ -241,6 +241,40 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
   return allProblems;
 }
 
+/**
+ * Difficulty + topic tags for specific problems, 50 per GraphQL request via
+ * aliases. Needed because userProgressQuestionList stops at 600 problems
+ * (observed live: 988 solved, 600 returned), leaving the rest without tags.
+ * Returns Map<slug, { title, difficulty, tags }>.
+ */
+export async function fetchQuestionMeta(slugs, sessionCookie = null) {
+  const meta = new Map();
+  const CHUNK = 50;
+  for (let i = 0; i < slugs.length; i += CHUNK) {
+    const chunk = slugs.slice(i, i + CHUNK);
+    const varDefs = chunk.map((_, j) => `$s${j}: String!`).join(', ');
+    const fields  = chunk.map((_, j) =>
+      `q${j}: question(titleSlug: $s${j}) { titleSlug title difficulty topicTags { name } }`
+    ).join('\n');
+    const variables = Object.fromEntries(chunk.map((slug, j) => [`s${j}`, slug]));
+    try {
+      const data = await lcGraphQL(`query questionMeta(${varDefs}) {\n${fields}\n}`, variables, sessionCookie);
+      for (const q of Object.values(data?.data ?? {})) {
+        if (!q?.titleSlug) continue;
+        meta.set(q.titleSlug, {
+          title: q.title,
+          difficulty: q.difficulty,
+          tags: (q.topicTags ?? []).map(t => t.name),
+        });
+      }
+    } catch (err) {
+      console.warn(`[LC] questionMeta chunk ${i / CHUNK + 1} failed: ${err.message}`);
+    }
+    if (i + CHUNK < slugs.length) await new Promise(r => setTimeout(r, 500));
+  }
+  return meta;
+}
+
 async function fetchRecentAcSubmissions(handle) {
   const query = `
     query recentAcSubmissions($username: String!, $limit: Int!) {
@@ -423,10 +457,14 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
       return null;
     }
   } catch (err) {
-    if (err.response?.status === 401 || err.response?.status === 403) {
+    if (err.response?.status === 401) {
       throw new Error('LEETCODE_SESSION expired during per-problem backfill.');
     }
-    if (err.response?.status !== 404) {
+    // 403 here is LeetCode throttling the REST endpoint (observed live after
+    // ~20 rapid history pages), not an expired session — GraphQL still works.
+    if (err.response?.status === 403) {
+      console.warn(`[LC] T1 REST 403 for "${titleSlug}" (throttled) — trying GraphQL`);
+    } else if (err.response?.status !== 404) {
       console.warn(`[LC] T1 REST failed for "${titleSlug}": ${err.message} — trying GraphQL`);
     }
   }
