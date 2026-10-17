@@ -190,13 +190,18 @@
           // this tab). We only log it — by this point background.js has
           // either already completed the upload or already queued it for
           // retry, so this is informational, not a failure signal.
+          var picker = window.CodeInsightPicker;
           if (chrome.runtime.lastError) {
             console.debug('[CodeInsight Bridge] No response (port likely closed by navigation):',
                           chrome.runtime.lastError.message);
+            // The upload still happened — ask for the pattern feedback directly.
+            if (picker) setTimeout(function () { picker.fetchFeedback(payload.problemSlug); }, 1500);
             return;
           }
           if (response && response.success) {
             console.log('[CodeInsight Bridge] Upload confirmed.');
+            var fb = response.data && response.data.feedback;
+            if (picker && fb) picker.showFeedback(fb, payload.problemSlug);
           } else {
             console.warn('[CodeInsight Bridge] Upload failed:',
                          response && response.error);

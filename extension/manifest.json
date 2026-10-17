@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CodeInsight – LeetCode Sync",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Automatically captures your LeetCode submissions and syncs them to CodeInsight for AI-powered analysis.",
 
   "permissions": [
@@ -28,7 +28,7 @@
     },
     {
       "matches": ["https://leetcode.com/problems/*"],
-      "js": ["src/bridge.js"],
+      "js": ["src/picker.js", "src/bridge.js"],
       "run_at": "document_start"
     }
   ],

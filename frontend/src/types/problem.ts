@@ -55,6 +55,8 @@ export interface Problem {
   timeComplexity?: string;
   spaceComplexity?: string;
   platform?: Platform;
+  /** LeetCode titleSlug / Codeforces id for imported problems. */
+  platformProblemId?: string | null;
   submissions?: Submission[];
   tags?: string[];
   aiAnalysis?: AIAnalysis | null;

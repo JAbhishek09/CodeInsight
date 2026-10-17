@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Check, Sparkles } from 'lucide-react';
 import { usePatterns } from '../hooks/usePatterns';
+import { usePredictionStats } from '../hooks/usePredictions';
 import QueryError from '../components/QueryError';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +25,7 @@ function pickFocus(patterns: PatternSummary[]): PatternSummary | null {
 }
 
 /** Circular progress node for one pattern. */
-function PatternNode({ p, focus }: { p: PatternSummary; focus: boolean }) {
+function PatternNode({ p, focus, recognition }: { p: PatternSummary; focus: boolean; recognition?: { attempts: number; accuracy: number | null } }) {
   const state = masteryOf(p.solved, p.attempted, p.total);
   const pct = p.total ? p.solved / p.total : 0;
   const R = 34;
@@ -58,6 +59,9 @@ function PatternNode({ p, focus }: { p: PatternSummary; focus: boolean }) {
       </span>
       <span className="text-sm font-medium leading-tight text-foreground">{p.name}</span>
       <span className="text-xs tabular-nums text-muted-foreground">{p.solved}/{p.total} solved</span>
+      {recognition && recognition.attempts > 0 && recognition.accuracy !== null && (
+        <span className="text-[11px] tabular-nums pat-text">{Math.round(recognition.accuracy * 100)}% spotted</span>
+      )}
     </Link>
   );
 }
@@ -76,7 +80,9 @@ function TreeSkeleton() {
 
 export default function PatternsPage() {
   const q = usePatterns();
+  const stats = usePredictionStats().data;
   const data = q.data;
+  const accuracyOf = (key: string) => stats?.perPattern.find((p) => p.key === key);
   const focus = data ? pickFocus(data.patterns) : null;
   const mastered = data?.patterns.filter((p) => masteryOf(p.solved, p.attempted, p.total) === 'mastered').length ?? 0;
   const levels = data ? [...new Set(data.patterns.map((p) => p.level))].sort() : [];
@@ -93,6 +99,13 @@ export default function PatternsPage() {
         </div>
         {data && (
           <dl className="flex gap-6 text-right">
+            <div>
+              <dt className="text-xs text-muted-foreground">Recognition</dt>
+              <dd className="text-xl font-semibold tabular-nums text-foreground">
+                {stats?.accuracy != null ? `${Math.round(stats.accuracy * 100)}%` : '—'}
+                {stats && stats.attempts > 0 && <span className="text-sm font-normal text-muted-foreground"> of {stats.attempts}</span>}
+              </dd>
+            </div>
             <div>
               <dt className="text-xs text-muted-foreground">Mastered</dt>
               <dd className="text-xl font-semibold tabular-nums text-foreground">{mastered}<span className="text-sm font-normal text-muted-foreground"> / {data.patterns.length}</span></dd>
@@ -136,7 +149,7 @@ export default function PatternsPage() {
                 <p className="mb-3 text-xs font-medium uppercase tracking-wide text-subtle">{LEVEL_LABEL[lvl] ?? `Level ${lvl}`}</p>
                 <div className="flex flex-wrap justify-center gap-x-4 gap-y-6 sm:gap-x-10">
                   {data.patterns.filter((p) => p.level === lvl).map((p) => (
-                    <PatternNode key={p.key} p={p} focus={focus?.key === p.key} />
+                    <PatternNode key={p.key} p={p} focus={focus?.key === p.key} recognition={accuracyOf(p.key)} />
                   ))}
                 </div>
               </Fragment>
@@ -149,6 +162,40 @@ export default function PatternsPage() {
           <span>Pulsing = focus now</span>
         </div>
       </section>
+
+      {stats && (
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-border bg-surface-1 p-4">
+            <h2 className="text-sm font-semibold text-foreground">Patterns you mix up</h2>
+            {stats.confusions.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {stats.attempts === 0 ? 'Guess the pattern on a few problems to see this.' : 'No mix-ups yet — nice.'}
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {stats.confusions.map((c) => (
+                  <li key={c.actual + c.predicted} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">
+                      <Link to={`/patterns/${c.actual}`} style={patternStyle(c.actual)} className="font-medium pat-text hover:underline">{c.actualName}</Link>
+                      <span className="text-muted-foreground"> guessed as </span>
+                      <span className="text-foreground">{c.predictedName}</span>
+                    </span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{c.count}×</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl border border-border bg-surface-1 p-4">
+            <h2 className="text-sm font-semibold text-foreground">How recognition works</h2>
+            <ol className="mt-2 list-inside list-decimal space-y-1.5 text-sm text-muted-foreground">
+              <li>Open a problem — on LeetCode with the extension, or here.</li>
+              <li>Pick the pattern <em>before</em> you code.</li>
+              <li>Submit (or check here) to see if you spotted it, and the clue you needed.</li>
+            </ol>
+          </div>
+        </section>
+      )}
 
       {data && data.totals.solved === 0 && (
         <div className="flex flex-col items-center gap-3 text-center">

@@ -4,6 +4,7 @@ import Nonce from '../models/Nonce.js';
 import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
 import { parseLeetcodeHandle } from '../utils/parseHandle.js';
+import { resolveOnSubmission } from '../services/predictionService.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -196,11 +197,13 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   if (!updateResult) {
     // The $ne filter didn't match — submissionId already in the array
     const existing = await Problem.findOne({ user: userId, platform: 'leetcode', platformProblemId: problemSlug });
+    const feedback = await resolveOnSubmission({ userId, slug: problemSlug, submissionId, verdict });
     return res.status(200).json({
       success: true,
       message: 'Submission already recorded.',
       duplicate: true,
       problemId: existing?._id,
+      feedback,
     });
   }
 
@@ -241,13 +244,17 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
     }
   }
 
-  // ── 6. Response ─────────────────────────────────────────────────────────────
+  // ── 6. Pattern feedback: close the student's guess for this problem ─────────
+  const feedback = await resolveOnSubmission({ userId, slug: problemSlug, submissionId, verdict });
+
+  // ── 7. Response ─────────────────────────────────────────────────────────────
   return res.status(201).json({
     success: true,
     message: 'Submission recorded successfully.',
     duplicate: false,
     aiInvalidated,
     aiMessage,
+    feedback,
     data: {
       problemId: problem._id,
       problemSlug,

@@ -1,8 +1,6 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, Eye, Network } from 'lucide-react';
-import { patternStyle } from '@/lib/patterns';
-import type { ProblemPattern } from '@/types/pattern';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
+import PatternGuess from './PatternGuess';
 import DifficultyBadge from '@/components/DifficultyBadge';
 import { Button } from '@/components/ui/button';
 import { relativeTime, shortDate } from '@/lib/format';
@@ -15,36 +13,6 @@ const PLATFORM_LABEL: Record<string, string> = {
 };
 
 const MAX_TAGS = 6;
-
-/**
- * The problem's pattern. Hidden behind a button until the problem is solved,
- * so students try to name it themselves first.
- */
-function PatternReveal({ pattern, solved }: { pattern: ProblemPattern; solved: boolean }) {
-  const [revealed, setRevealed] = useState(solved);
-  if (!revealed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setRevealed(true)}
-        className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border-strong px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-      >
-        <Eye className="size-4" aria-hidden />
-        Which pattern is this? Think, then reveal
-      </button>
-    );
-  }
-  return (
-    <div style={patternStyle(pattern.key)} className="flex flex-wrap items-start gap-3 rounded-lg border px-3 py-2.5 pat-border pat-tint">
-      <Network className="mt-0.5 size-4 shrink-0 pat-text" aria-hidden />
-      <div className="min-w-0 flex-1 text-sm">
-        <Link to={`/patterns/${pattern.key}`} className="font-semibold pat-text hover:underline">{pattern.name}</Link>
-        {pattern.secondary && <span className="text-muted-foreground"> + {pattern.secondary.name}</span>}
-        <p className="mt-0.5 text-foreground/80">Clue: {pattern.cue} · optimal {pattern.complexity}</p>
-      </div>
-    </div>
-  );
-}
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
@@ -107,8 +75,13 @@ export default function ProblemHeader({ problem, submissions }: { problem: Probl
         )}
       </div>
 
-      {problem.pattern && (
-        <PatternReveal key={problem._id} pattern={problem.pattern} solved={problem.status === 'Solved' || accepted.length > 0} />
+      {problem.pattern && problem.platformProblemId && (
+        <PatternGuess
+          key={problem._id}
+          pattern={problem.pattern}
+          slug={problem.platformProblemId ?? ''}
+          solved={problem.status === 'Solved' || accepted.length > 0}
+        />
       )}
 
       <dl className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-surface-1 px-4 py-3 sm:grid-cols-4">

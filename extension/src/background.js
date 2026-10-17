@@ -183,8 +183,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Pattern guesses and feedback (picker.js on LeetCode problem pages)
+  if (message.type === 'SUBMIT_PREDICTION' || message.type === 'GET_FEEDBACK') {
+    if (!sender.url?.startsWith('https://leetcode.com/')) {
+      safeSendResponse(sendResponse, { success: false, error: 'Invalid sender origin' });
+      return false;
+    }
+    const slug = String(message.slug || '');
+    const req = message.type === 'SUBMIT_PREDICTION'
+      ? apiRequest('POST', '/api/predictions', { slug, predicted: message.predicted, source: 'extension' })
+      : apiRequest('GET', `/api/predictions/latest?slug=${encodeURIComponent(slug)}`);
+    req.then((r) => safeSendResponse(sendResponse, r));
+    return true;
+  }
+
   return false;
 });
+
+/** Authenticated JSON request to the CodeInsight API. Never throws. */
+async function apiRequest(method, path, body) {
+  const { jwt, apiBase } = await loadSettings();
+  if (!jwt) return { success: false, error: 'Sign in to the CodeInsight extension first.' };
+  try {
+    const res = await fetch(`${apiBase}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { success: false, error: json.message || `HTTP ${res.status}` };
+    return { success: true, data: json.data };
+  } catch (err) {
+    return { success: false, error: err.name === 'TimeoutError' ? 'CodeInsight didn’t respond.' : err.message };
+  }
+}
 
 // ─── Upload Handler ───────────────────────────────────────────────────────────
 /**

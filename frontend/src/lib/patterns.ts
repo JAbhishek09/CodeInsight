@@ -15,3 +15,15 @@ export function masteryOf(solved: number, attempted: number, total: number): 'ma
   if (solved + attempted > 0) return 'learning';
   return 'new';
 }
+
+/** The patterns a student can guess. Keep in sync with backend/data/patterns.js. */
+export const PATTERN_OPTIONS: { key: PatternKey; name: string }[] = [
+  { key: 'two-pointers', name: 'Two pointers' },
+  { key: 'prefix-hashing', name: 'Prefix sums & hashing' },
+  { key: 'sliding-window', name: 'Sliding window' },
+  { key: 'binary-search', name: 'Binary search' },
+  { key: 'stack', name: 'Stack & monotonic stack' },
+  { key: 'bfs-dfs', name: 'Graph & grid BFS/DFS' },
+  { key: 'heap-top-k', name: 'Heap & top-K' },
+  { key: 'dp-1d', name: '1-D dynamic programming' },
+];
