@@ -58,6 +58,18 @@
   --heat-3: #5f62cf;
   --heat-4: #8f92f7;
 
+  /* Pattern colours — one vivid hue per pattern, used everywhere that pattern
+     appears (skill tree, badges, problem pages). */
+  --pat-two-pointers:   #22d3ee;
+  --pat-prefix-hashing: #a3e635;
+  --pat-sliding-window: #a78bfa;
+  --pat-binary-search:  #fbbf24;
+  --pat-stack:          #fb7185;
+  --pat-bfs-dfs:        #34d399;
+  --pat-heap-top-k:     #fb923c;
+  --pat-dp-1d:          #e879f9;
+  --pat-glow: 0.35;     /* glow strength around pattern nodes */
+
   --radius: 0.625rem;
   --nav-h: 56px;
   --elev-card: none;
@@ -106,6 +118,16 @@
   --heat-2: #9a9cf0;
   --heat-3: #6c6ae6;
   --heat-4: #4338ca;
+
+  --pat-two-pointers:   #0e7490;
+  --pat-prefix-hashing: #4d7c0f;
+  --pat-sliding-window: #7c3aed;
+  --pat-binary-search:  #b45309;
+  --pat-stack:          #e11d48;
+  --pat-bfs-dfs:        #047857;
+  --pat-heap-top-k:     #c2410c;
+  --pat-dp-1d:          #a21caf;
+  --pat-glow: 0.18;
 
   --elev-card: 0 1px 2px rgb(9 9 11 / 0.05);
   --elev-pop: 0 8px 24px rgb(9 9 11 / 0.12);
@@ -198,6 +220,19 @@
 /* ─── Page transition ─────────────────────────────────────────────────────── */
 @layer components {
   .page-enter { animation: fadeSlideIn 0.2s ease forwards; }
+
+  /* Pattern-coloured surfaces. Set --pc (e.g. style={{'--pc': 'var(--pat-stack)'}}). */
+  .pat-text   { color: var(--pc); }
+  .pat-tint   { background-color: color-mix(in oklab, var(--pc) 14%, transparent); }
+  .pat-border { border-color: color-mix(in oklab, var(--pc) 55%, transparent); }
+  .pat-glow   { box-shadow: 0 0 0 1px color-mix(in oklab, var(--pc) 60%, transparent),
+                            0 0 24px color-mix(in oklab, var(--pc) calc(var(--pat-glow) * 100%), transparent); }
+  .pat-pulse  { animation: patPulse 2.4s ease-in-out infinite; }
+}
+
+@keyframes patPulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--pc) 45%, transparent); }
+  50%      { box-shadow: 0 0 0 8px color-mix(in oklab, var(--pc) 0%, transparent); }
 }
 
 @media (prefers-reduced-motion: reduce) {

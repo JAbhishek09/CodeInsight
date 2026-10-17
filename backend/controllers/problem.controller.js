@@ -1,6 +1,7 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 import { computeAiAnalysisMeta } from '../utils/aiMeta.js';
+import { patternForProblem } from '../services/patternService.js';
 import { escapeRegex, listProblems, parseListQuery } from '../services/problemListService.js';
 
 // Fields a user may edit via PUT /api/problems/:id. Ownership, submissions and
@@ -97,6 +98,7 @@ export const getProblemById = asyncHandler(async (req, res) => {
 
   const data = problem.toObject();
   data.aiAnalysisMeta = computeAiAnalysisMeta(problem);
+  data.pattern = patternForProblem(problem);
 
   res.status(200).json({ success: true, data });
 });

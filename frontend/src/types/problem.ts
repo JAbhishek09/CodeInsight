@@ -61,6 +61,8 @@ export interface Problem {
   aiAnalysisStatus?: AIAnalysisStatus;
   /** Only on GET /api/problems/:id — freshness of aiAnalysis vs the current code. */
   aiAnalysisMeta?: AIAnalysisMeta;
+  /** Only on GET /api/problems/:id — the mapped pattern, or null. */
+  pattern?: import('./pattern').ProblemPattern | null;
   createdAt?: string;
   updatedAt?: string;
 }

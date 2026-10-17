@@ -20,6 +20,8 @@ const ProblemsPage = lazy(() => import('./pages/ProblemsPage').then((m) => ({ de
 const ProblemPage = lazy(() => import('./pages/ProblemPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const PatternsPage = lazy(() => import('./pages/PatternsPage'));
+const PatternDetailPage = lazy(() => import('./pages/PatternDetailPage'));
 
 // Old /analysis/:id links now live on the problem page's AI analysis tab.
 function AnalysisRedirect() {
@@ -83,6 +85,10 @@ export default function App() {
               element={<ProtectedRoute><ProblemsWrapper /></ProtectedRoute>} />
             <Route path="/problems/:problemId"
               element={<ProtectedRoute><AuthLayout><ProblemPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/patterns"
+              element={<ProtectedRoute><AuthLayout><PatternsPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/patterns/:key"
+              element={<ProtectedRoute><AuthLayout><PatternDetailPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/profile"
               element={<ProtectedRoute><AuthLayout><ProfilePage /></AuthLayout></ProtectedRoute>} />
             <Route path="/insights"
