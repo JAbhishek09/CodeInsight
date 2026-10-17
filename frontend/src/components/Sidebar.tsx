@@ -31,21 +31,21 @@ export default function Sidebar({ isOpen, onClose, onImport }: SidebarProps) {
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40 bg-[#07090e]/80 backdrop-blur-sm lg:hidden"
+        className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
         onClick={onClose}
       />
       {/* Drawer */}
-      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-[#0b0e14] border-r border-slate-900 flex flex-col lg:hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-950">
+      <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border flex flex-col lg:hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <Brain className="w-5 h-5 text-pink-400" />
-            <span className="text-sm font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400">
+            <Brain className="w-5 h-5 text-primary" />
+            <span className="text-sm font-extrabold text-foreground">
               CodeInsight
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-900 cursor-pointer"
+            className="p-1.5 rounded-lg text-subtle hover:text-foreground hover:bg-surface-2 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -56,10 +56,10 @@ export default function Sidebar({ isOpen, onClose, onImport }: SidebarProps) {
             <button
               key={path}
               onClick={() => handleNav(path)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-mono transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs  transition-colors cursor-pointer ${
                 location.pathname === path
-                  ? 'bg-pink-500/10 text-pink-400 border border-pink-500/20'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+                  ? 'bg-primary/10 text-primary border border-primary/20'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-surface-2 border border-transparent'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -69,10 +69,10 @@ export default function Sidebar({ isOpen, onClose, onImport }: SidebarProps) {
         </nav>
 
         {/* Import button — prominently at the bottom of the mobile drawer */}
-        <div className="p-4 border-t border-slate-950">
+        <div className="p-4 border-t border-border">
           <button
             onClick={() => { onClose(); onImport(); }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
             Import LeetCode History

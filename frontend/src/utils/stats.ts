@@ -15,7 +15,9 @@
  *    with a meaningless fallback.
  */
 
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
+import { languageLabel } from '../lib/languages';
+import { difficultyStyle } from '../lib/difficulty';
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -249,24 +251,11 @@ export function computeRecentActivity(entries: ActivityEntry[], limit = 6): Acti
 
 // ─── Language usage ───────────────────────────────────────────────────────────
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  cpp:        'C++',
-  c:          'C',
-  java:       'Java',
-  python3:    'Python 3',
-  python:     'Python',
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
-  golang:     'Go',
-  rust:       'Rust',
-  kotlin:     'Kotlin',
-};
-
 export function computeLanguageUsage(entries: ActivityEntry[]): { topic: string; count: number }[] {
   const map = new Map<string, number>();
   entries.forEach((e) => {
     if (!e.language) return;
-    const label = LANGUAGE_LABELS[e.language] || e.language;
+    const label = languageLabel(e.language);
     map.set(label, (map.get(label) || 0) + 1);
   });
   return Array.from(map.entries())
@@ -300,7 +289,7 @@ export function computeSolvingTrend(entries: ActivityEntry[], months = 6): Trend
   return [
     {
       label:  'Problems Solved',
-      color:  '#ec4899',
+      color:  'var(--chart-1)',
       points: buckets.map((b) => ({ x: b.label, y: counts.get(b.key) || 0 })),
     },
   ];
@@ -320,9 +309,9 @@ export function computeSolvingTrend(entries: ActivityEntry[], months = 6): Trend
 export function computeDifficultyTrend(entries: ActivityEntry[], months = 6): TrendSeries[] {
   const buckets = lastNMonths(months);
   const diffs: { key: 'Easy' | 'Medium' | 'Hard'; color: string }[] = [
-    { key: 'Easy',   color: '#10b981' },
-    { key: 'Medium', color: '#f59e0b' },
-    { key: 'Hard',   color: '#f43f5e' },
+    { key: 'Easy',   color: difficultyStyle('Easy').color },
+    { key: 'Medium', color: difficultyStyle('Medium').color },
+    { key: 'Hard',   color: difficultyStyle('Hard').color },
   ];
   return diffs.map(({ key: diff, color }) => {
     const counts = new Map(buckets.map((b) => [b.key, 0]));
@@ -357,7 +346,7 @@ export function computeAcceptanceTrend(entries: ActivityEntry[], months = 6): Tr
   return [
     {
       label:  'Acceptance %',
-      color:  '#6366f1',
+      color:  'var(--chart-4)',
       points: buckets.map((b) => {
         const t = total.get(b.key)    || 0;
         const a = accepted.get(b.key) || 0;

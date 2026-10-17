@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import DifficultyBadge from './DifficultyBadge';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -21,24 +22,9 @@ import {
   Code2,
 } from 'lucide-react';
 
-export interface Problem {
-  _id: string;
-  title: string;
-  url?: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Div1' | 'Div2' | 'Div3' | 'unrated';
-  status: 'Solved' | 'Attempted' | 'To Do';
-  category: string;
-  notes?: string;
-  timeComplexity?: string;
-  spaceComplexity?: string;
-  platform?: string;
-  submissions?: any[];
-  tags?: string[];
-  aiAnalysis?: any;
-  aiAnalysisStatus?: 'idle' | 'pending' | 'ready' | 'error';
-  createdAt?: string;
-  updatedAt?: string;
-}
+import type { Problem, ProblemStatus } from '../types/problem';
+
+export type { Problem };
 
 interface ProblemCardProps {
   problem: Problem;
@@ -47,49 +33,25 @@ interface ProblemCardProps {
   onToggleStatus: (id: string, currentStatus: 'Solved' | 'Attempted' | 'To Do') => Promise<void>;
 }
 
-// ── FIX: Full difficulty map covering LeetCode + Codeforces difficulties ──────
-function getDifficultyStyles(diff: string): string {
-  switch (diff) {
-    case 'Easy':
-      return 'bg-emerald-950/40 text-emerald-400 border border-emerald-500/20';
-    case 'Medium':
-      return 'bg-amber-950/40 text-amber-400 border border-amber-500/20';
-    case 'Hard':
-      return 'bg-rose-950/40 text-rose-400 border border-rose-500/20';
-    // Codeforces rating tiers
-    case 'Div1':
-      return 'bg-red-950/40 text-red-400 border border-red-500/20';
-    case 'Div2':
-      return 'bg-orange-950/40 text-orange-400 border border-orange-500/20';
-    case 'Div3':
-      return 'bg-yellow-950/40 text-yellow-400 border border-yellow-500/20';
-    case 'Div4':
-      return 'bg-lime-950/40 text-lime-400 border border-lime-500/20';
-    default:
-      // 'unrated' or anything unexpected — neutral grey
-      return 'bg-slate-900/60 text-slate-500 border border-slate-800';
-  }
-}
-
 function getStatusIcon(stat: 'Solved' | 'Attempted' | 'To Do') {
   switch (stat) {
     case 'Solved':
-      return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+      return <CheckCircle2 className="w-3.5 h-3.5 text-success shrink-0" />;
     case 'Attempted':
-      return <Hourglass className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />;
+      return <Hourglass className="w-3.5 h-3.5 text-warning shrink-0 animate-pulse" />;
     case 'To Do':
-      return <CircleDot className="w-3.5 h-3.5 text-indigo-400 shrink-0" />;
+      return <CircleDot className="w-3.5 h-3.5 text-primary shrink-0" />;
   }
 }
 
 function getStatusStyles(stat: 'Solved' | 'Attempted' | 'To Do'): string {
   switch (stat) {
     case 'Solved':
-      return 'bg-emerald-950/30 text-emerald-300 border border-emerald-500/10';
+      return 'bg-success/10 text-success border border-success/15';
     case 'Attempted':
-      return 'bg-amber-950/30 text-amber-300 border border-amber-500/10';
+      return 'bg-warning/10 text-warning border border-warning/15';
     case 'To Do':
-      return 'bg-indigo-950/30 text-indigo-300 border border-indigo-500/10';
+      return 'bg-primary/10 text-primary border border-primary/15';
   }
 }
 
@@ -145,28 +107,28 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
     if (!isSynced) return null;
     if (aiStatus === 'ready' || hasAiResult) {
       return (
-        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-indigo-950/40 text-indigo-400 border border-indigo-500/20">
+        <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
           <Brain className="w-2.5 h-2.5" /> AI Analyzed
         </span>
       );
     }
     if (aiStatus === 'pending') {
       return (
-        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-950/40 text-amber-400 border border-amber-500/20">
+        <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-warning border border-warning/20">
           <Loader2 className="w-2.5 h-2.5 animate-spin" /> Analyzing
         </span>
       );
     }
     if (aiStatus === 'error') {
       return (
-        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-rose-950/40 text-rose-400 border border-rose-500/20">
+        <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-danger/10 text-danger border border-danger/20">
           <AlertCircle className="w-2.5 h-2.5" /> Failed
         </span>
       );
     }
     if (hasCodedSubmission) {
       return (
-        <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-900 text-slate-500 border border-slate-800">
+        <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full bg-surface-2 text-subtle border border-border-strong">
           <Brain className="w-2.5 h-2.5" /> Not Analyzed
         </span>
       );
@@ -181,23 +143,16 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="bg-[#0b0e14]/90 border border-slate-900 rounded-2xl overflow-hidden shadow-lg hover:shadow-cyan-950/10 hover:border-slate-800/80 transition-all group flex flex-col h-full"
+      className="bg-card border border-border rounded-2xl overflow-hidden shadow-lg hover:border-border-strong transition-all group flex flex-col h-full"
       id={`problem-card-${problem._id}`}
     >
       <div className="p-5 flex flex-col gap-3 flex-1">
         {/* Top badge row */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {/* FIX: use the full getDifficultyStyles fn that handles all difficulty values */}
-          <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full ${getDifficultyStyles(problem.difficulty)}`}>
-            {problem.difficulty}
-          </span>
+          <DifficultyBadge difficulty={problem.difficulty} />
           {problem.platform && problem.platform !== 'manual' && (
             <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-                problem.platform === 'leetcode'
-                  ? 'bg-amber-950/30 text-amber-400 border-amber-500/20'
-                  : 'bg-blue-950/30 text-blue-400 border-blue-500/20'
-              }`}
+              className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-surface-2 text-muted-foreground capitalize"
             >
               {problem.platform}
             </span>
@@ -207,7 +162,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
         {/* Title */}
         <h3
-          className="text-sm font-bold text-slate-100 group-hover:text-white transition-colors tracking-tight line-clamp-2 cursor-pointer hover:text-pink-300 leading-snug min-h-[2.5rem]"
+          className="text-sm font-bold text-foreground group-hover:text-foreground transition-colors tracking-tight line-clamp-2 cursor-pointer hover:text-primary leading-snug min-h-[2.5rem]"
           onClick={() => navigate(`/problems/${problem._id}`)}
           title="View submission history"
         >
@@ -216,27 +171,27 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
         {/* Category + date */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-mono text-slate-500 bg-slate-900 px-2 py-0.5 border border-slate-950 rounded-full font-medium truncate max-w-[140px]">
+          <span className="text-[10px] text-subtle bg-surface-2 px-2 py-0.5 border border-border rounded-full font-medium truncate max-w-[140px]">
             {problem.category || 'General'}
           </span>
-          <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1 ml-auto shrink-0">
+          <span className="text-[10px] text-subtle flex items-center gap-1 ml-auto shrink-0">
             <Calendar className="w-3 h-3" />
             {formattedDate}
           </span>
         </div>
 
         {/* Complexity + submissions */}
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-400 pt-1">
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground pt-1">
           <span className="flex items-center gap-1" title="Time Complexity">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            <span className="text-cyan-400">{problem.timeComplexity || 'O(N)'}</span>
+            <Clock className="w-3.5 h-3.5 text-subtle" />
+            <span className="text-primary">{problem.timeComplexity || 'O(N)'}</span>
           </span>
           <span className="flex items-center gap-1" title="Space Complexity">
-            <Layers className="w-3.5 h-3.5 text-slate-500" />
-            <span className="text-purple-400">{problem.spaceComplexity || 'O(N)'}</span>
+            <Layers className="w-3.5 h-3.5 text-subtle" />
+            <span className="text-primary">{problem.spaceComplexity || 'O(N)'}</span>
           </span>
           {submissionCount > 0 && (
-            <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/20 px-1.5 py-0.5 border border-indigo-500/20 rounded-full ml-auto shrink-0">
+            <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 border border-primary/20 rounded-full ml-auto shrink-0">
               {submissionCount} sub{submissionCount !== 1 ? 's' : ''}
             </span>
           )}
@@ -248,7 +203,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="text-[11px] text-pink-400 hover:text-pink-300 inline-flex items-center gap-1 hover:underline w-fit"
+            className="text-[11px] text-primary hover:text-primary inline-flex items-center gap-1 hover:underline w-fit"
           >
             View original problem
             <ExternalLink className="w-3 h-3" />
@@ -259,7 +214,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
         <button
           onClick={handleToggle}
           disabled={toggling}
-          className={`cursor-pointer inline-flex items-center justify-center gap-2 px-3 py-1.5 font-mono text-xs font-bold rounded-lg border transition-all w-full mt-auto ${getStatusStyles(
+          className={`cursor-pointer inline-flex items-center justify-center gap-2 px-3 py-1.5  text-xs font-bold rounded-lg border transition-all w-full mt-auto ${getStatusStyles(
             problem.status
           )} hover:brightness-110`}
           title="Click to cycle status"
@@ -270,10 +225,10 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
       </div>
 
       {/* Action row */}
-      <div className="px-5 py-3 border-t border-slate-950/80 bg-[#090b10]/40 flex items-center gap-1.5">
+      <div className="px-5 py-3 border-t border-border bg-surface-2 flex items-center gap-1.5">
         <button
           onClick={(e) => { e.stopPropagation(); navigate(`/problems/${problem._id}`); }}
-          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 hover:text-cyan-400 border border-slate-900 rounded-lg text-slate-400 cursor-pointer transition-colors text-[11px] font-mono font-bold"
+          className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-surface-2 hover:bg-surface-3 hover:text-primary border border-border rounded-lg text-muted-foreground cursor-pointer transition-colors text-[11px] font-bold"
           title="View submission history and code"
         >
           <Eye className="w-3.5 h-3.5" />
@@ -284,10 +239,10 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
           <button
             onClick={(e) => { e.stopPropagation(); navigate(`/analysis/${problem._id}`); }}
             disabled={!hasCodedSubmission}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-slate-900 rounded-lg cursor-pointer transition-colors text-[11px] font-mono font-bold ${
+            className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-border rounded-lg cursor-pointer transition-colors text-[11px]  font-bold ${
               hasCodedSubmission
-                ? 'bg-slate-900 hover:bg-indigo-950/40 hover:text-indigo-400 text-slate-400'
-                : 'bg-slate-900 text-slate-700 cursor-not-allowed'
+                ? 'bg-surface-2 hover:bg-primary/10 hover:text-primary text-muted-foreground'
+                : 'bg-surface-2 text-faint cursor-not-allowed'
             }`}
             title={hasCodedSubmission ? 'AI Analysis' : 'No code captured yet — use Chrome Extension'}
           >
@@ -298,7 +253,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
         <button
           onClick={(e) => { e.stopPropagation(); onEdit(problem); }}
-          className="p-2 bg-slate-900 hover:bg-slate-800 hover:text-white border border-slate-900 rounded-lg text-slate-400 cursor-pointer transition-colors shrink-0"
+          className="p-2 bg-surface-2 hover:bg-surface-3 hover:text-foreground border border-border rounded-lg text-muted-foreground cursor-pointer transition-colors shrink-0"
           title="Edit"
         >
           <Edit3 className="w-3.5 h-3.5" />
@@ -306,7 +261,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
         <button
           onClick={handleDelete}
           disabled={deleting}
-          className="p-2 bg-slate-900 hover:bg-red-950/45 border border-slate-900 hover:border-red-500/10 rounded-lg text-slate-400 hover:text-red-400 cursor-pointer transition-colors shrink-0"
+          className="p-2 bg-surface-2 hover:bg-danger/10 border border-border hover:border-danger/15 rounded-lg text-muted-foreground hover:text-danger cursor-pointer transition-colors shrink-0"
           title="Delete"
         >
           <Trash2 className="w-3.5 h-3.5" />
@@ -315,13 +270,13 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
       {/* Notes expand */}
       {problem.notes && (
-        <div className="border-t border-slate-950/80 bg-[#090b10]/40">
+        <div className="border-t border-border bg-surface-2">
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full px-5 py-2.5 flex items-center justify-between text-[10px] font-mono text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+            className="w-full px-5 py-2.5 flex items-center justify-between text-[10px] text-subtle hover:text-muted-foreground transition-colors cursor-pointer"
           >
             <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-pink-500/70" />
+              <Sparkles className="w-3.5 h-3.5 text-primary/70" />
               <span>NOTES & INSIGHTS</span>
             </span>
             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -336,8 +291,8 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
                 transition={{ duration: 0.25, ease: 'easeInOut' }}
                 className="overflow-hidden"
               >
-                <div className="px-5 pb-5 pt-1 text-xs text-slate-400 leading-relaxed font-sans bg-slate-950/40 border-t border-slate-950/80">
-                  <p className="whitespace-pre-line border-l border-slate-800 pl-3 py-1 italic">
+                <div className="px-5 pb-5 pt-1 text-xs text-muted-foreground leading-relaxed font-sans bg-surface-2 border-t border-border">
+                  <p className="whitespace-pre-line border-l border-border-strong pl-3 py-1 italic">
                     {problem.notes}
                   </p>
                 </div>
@@ -348,7 +303,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
       )}
 
       {!hasCodedSubmission && isSynced && (
-        <div className="px-5 py-2 border-t border-slate-950/80 flex items-center gap-1.5 text-[10px] font-mono text-slate-600">
+        <div className="px-5 py-2 border-t border-border flex items-center gap-1.5 text-[10px] text-faint">
           <Code2 className="w-3 h-3" />
           No code captured — install the Chrome Extension
         </div>

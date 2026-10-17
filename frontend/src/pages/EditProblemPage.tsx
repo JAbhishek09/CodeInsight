@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { updateProblem } from '../api/problems.api';
-import { Problem } from '../components/ProblemCard';
+import { useUpdateProblem } from '../hooks/useProblems';
+import type { Problem } from '../types/problem';
 import { Loader2, Save } from 'lucide-react';
 
 interface EditProblemFormProps {
@@ -10,7 +10,7 @@ interface EditProblemFormProps {
 }
 
 const FIELD_BASE =
-  'w-full bg-[#05070a] border border-slate-900 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-pink-500/60 font-mono transition-all';
+  'w-full bg-surface-2 border border-border rounded-xl px-4 py-2.5 text-xs text-foreground placeholder:text-subtle focus:outline-none focus:border-primary/60  transition-all';
 
 export default function EditProblemForm({ problem, onSuccess, onCancel }: EditProblemFormProps) {
   const [form, setForm] = useState({
@@ -23,6 +23,7 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
     timeComplexity:  problem.timeComplexity || 'O(N)',
     spaceComplexity: problem.spaceComplexity || 'O(N)',
   });
+  const update = useUpdateProblem();
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -34,7 +35,7 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
     setError(null);
     setLoading(true);
     try {
-      await updateProblem(problem._id, form as any);
+      await update.mutateAsync({ id: problem._id, data: form as any });
       onSuccess();
     } catch (e: any) {
       // axiosInstance interceptor re-throws as plain Error; use e.message directly
@@ -47,24 +48,24 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
-        <div className="bg-red-950/20 border border-red-500/20 rounded-xl p-3 text-xs font-mono text-red-400">
+        <div className="bg-danger/10 border border-danger/20 rounded-xl p-3 text-xs text-danger">
           ✗ {error}
         </div>
       )}
 
       <div>
-        <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Title *</label>
+        <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Title *</label>
         <input value={form.title} onChange={(e) => set('title', e.target.value)} className={FIELD_BASE} required />
       </div>
 
       <div>
-        <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Problem URL</label>
+        <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Problem URL</label>
         <input value={form.url} onChange={(e) => set('url', e.target.value)} placeholder="https://..." className={FIELD_BASE} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Difficulty</label>
+          <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Difficulty</label>
           <select value={form.difficulty} onChange={(e) => set('difficulty', e.target.value)} className={FIELD_BASE}>
             <option>Easy</option>
             <option>Medium</option>
@@ -72,7 +73,7 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
           </select>
         </div>
         <div>
-          <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Status</label>
+          <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Status</label>
           <select value={form.status} onChange={(e) => set('status', e.target.value)} className={FIELD_BASE}>
             <option>Solved</option>
             <option>Attempted</option>
@@ -82,23 +83,23 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
       </div>
 
       <div>
-        <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Category / Topic</label>
+        <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Category / Topic</label>
         <input value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="Arrays" className={FIELD_BASE} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Time Complexity</label>
+          <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Time Complexity</label>
           <input value={form.timeComplexity} onChange={(e) => set('timeComplexity', e.target.value)} className={FIELD_BASE} />
         </div>
         <div>
-          <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Space Complexity</label>
+          <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Space Complexity</label>
           <input value={form.spaceComplexity} onChange={(e) => set('spaceComplexity', e.target.value)} className={FIELD_BASE} />
         </div>
       </div>
 
       <div>
-        <label className="block text-[11px] font-mono text-slate-400 mb-1.5 uppercase tracking-wider">Notes / Insights</label>
+        <label className="block text-[11px] text-muted-foreground mb-1.5 uppercase tracking-wider">Notes / Insights</label>
         <textarea
           value={form.notes}
           onChange={(e) => set('notes', e.target.value)}
@@ -111,14 +112,14 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white text-xs font-mono font-bold rounded-xl transition-all"
+          className="flex-1 px-4 py-2.5 bg-surface-2 hover:bg-surface-3 border border-border-strong text-muted-foreground hover:text-foreground text-xs font-bold rounded-xl transition-all"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={loading}
-          className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:opacity-95 disabled:opacity-40 text-white text-xs font-bold rounded-xl py-2.5 transition-all"
+          className="flex-1 flex items-center justify-center gap-2 bg-primary hover:opacity-95 disabled:opacity-40 text-primary-foreground text-xs font-bold rounded-xl py-2.5 transition-all"
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           {loading ? 'Saving...' : 'Save Changes'}

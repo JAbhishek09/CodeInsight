@@ -24,30 +24,30 @@ export default function RecentActivityFeed({ entries }: RecentActivityFeedProps)
 
   if (entries.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-600 text-xs font-mono">
+      <div className="text-center py-8 text-faint text-xs">
         No recent activity yet.
       </div>
     );
   }
 
   return (
-    <div className="divide-y divide-slate-950">
+    <div className="divide-y divide-border">
       {entries.map((e, i) => (
         <button
           key={`${e.problemId}-${e.submittedAt}-${i}`}
           onClick={() => navigate(`/problems/${e.problemId}`)}
-          className="w-full flex items-center gap-3 py-3 text-left hover:bg-slate-900/30 transition-colors px-2 -mx-2 rounded-lg group cursor-pointer"
+          className="w-full flex items-center gap-3 py-3 text-left hover:bg-surface-2 transition-colors px-2 -mx-2 rounded-lg group cursor-pointer"
         >
           <VerdictBadge verdict={e.verdict} />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white transition-colors">
+            <p className="text-xs font-semibold text-foreground truncate group-hover:text-foreground transition-colors">
               {e.problemTitle}
             </p>
-            <p className="text-[10px] font-mono text-slate-500">
+            <p className="text-[10px] text-subtle">
               {e.language || '—'} · {timeAgo(e.submittedAt)}
             </p>
           </div>
-          <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0 group-hover:text-slate-400 transition-colors" />
+          <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0 group-hover:text-muted-foreground transition-colors" />
         </button>
       ))}
     </div>

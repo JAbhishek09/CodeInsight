@@ -1,3 +1,4 @@
+import { queryClient } from '../lib/queryClient';
 import { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
   login as loginApi,
@@ -50,6 +51,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const handleSessionPurge = useCallback(() => {
     logoutApi();
     setUser(null);
+    queryClient.clear(); // never show the previous account's cached data
     setToken(null);
   }, []);
 

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Plus, BookOpen, Loader2, FolderSearch } from 'lucide-react';
 import { useProblems } from '../hooks/useProblems';
-import { ProblemCard, Problem } from '../components/ProblemCard';
+import { ProblemCard } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import ProblemFilters from '../components/ProblemFilters';
 import EmptyState from '../components/EmptyState';
+import QueryError from '../components/QueryError';
+import { toast } from 'sonner';
 import { Modal } from '../components/Modal';
 import AddProblemForm from './AddProblemPage';
 import EditProblemForm from './EditProblemPage';
@@ -36,19 +39,19 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
       {/* Compact header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-pink-950/30 border border-pink-500/20 flex items-center justify-center shrink-0">
-            <BookOpen className="w-4 h-4 text-pink-400" />
+          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <BookOpen className="w-4 h-4 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-extrabold text-white">Problem Repository</h1>
-            <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+            <h1 className="text-lg font-extrabold text-foreground">Problem Repository</h1>
+            <p className="text-[10px] text-subtle uppercase tracking-wider">
               {problems.length} problem{problems.length !== 1 ? 's' : ''} tracked
             </p>
           </div>
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:opacity-95 text-white text-xs font-bold rounded-xl px-4 py-2.5 transition-all cursor-pointer shrink-0"
+          className="flex items-center gap-2 bg-primary hover:opacity-95 text-primary-foreground text-xs font-bold rounded-xl px-4 py-2.5 transition-all cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
           Add Problem
@@ -65,14 +68,12 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
         resultCount={problems.length}
       />
 
-      {error && (
-        <div className="bg-red-950/20 border border-red-500/20 rounded-xl p-4 text-xs font-mono text-red-400">✗ {error}</div>
-      )}
+      {error && <QueryError title="Couldn't load problems" message={error} onRetry={() => refetch()} />}
 
       {/* Grid */}
       {loading ? (
         <div className="flex items-center justify-center min-h-[250px]">
-          <Loader2 className="w-8 h-8 animate-spin text-pink-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       ) : problems.length === 0 ? (
         hasActiveFilters ? (
@@ -97,8 +98,8 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
               key={problem._id}
               problem={problem}
               onEdit={(p) => setEditTarget(p)}
-              onDelete={removeProblem}
-              onToggleStatus={toggleStatus}
+              onDelete={(id) => removeProblem(id).catch((e) => { toast.error(`Delete failed: ${e.message}`); })}
+              onToggleStatus={(id, next) => toggleStatus(id, next).catch((e) => { toast.error(`Status update failed: ${e.message}`); })}
             />
           ))}
         </div>
@@ -106,14 +107,14 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
 
       {/* Modals */}
       <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Track New Problem">
-        <AddProblemForm onSuccess={() => { setShowAdd(false); refetch(); }} onCancel={() => setShowAdd(false)} />
+        <AddProblemForm onSuccess={() => { setShowAdd(false); toast.success('Problem added'); }} onCancel={() => setShowAdd(false)} />
       </Modal>
 
       <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Problem">
         {editTarget && (
           <EditProblemForm
             problem={editTarget}
-            onSuccess={() => { setEditTarget(null); refetch(); }}
+            onSuccess={() => { setEditTarget(null); toast.success('Problem updated'); }}
             onCancel={() => setEditTarget(null)}
           />
         )}

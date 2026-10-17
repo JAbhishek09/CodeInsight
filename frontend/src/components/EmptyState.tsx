@@ -11,18 +11,18 @@ interface EmptyStateProps {
  *  whenever there isn't enough data yet to render a meaningful view. */
 export default function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <div className="text-center py-16 px-6 border border-dashed border-slate-900 rounded-2xl space-y-3">
-      <div className="w-12 h-12 mx-auto rounded-xl bg-slate-900/60 border border-slate-900 flex items-center justify-center text-slate-600">
+    <div className="text-center py-16 px-6 border border-dashed border-border rounded-2xl space-y-3">
+      <div className="w-12 h-12 mx-auto rounded-xl bg-surface-2 border border-border flex items-center justify-center text-faint">
         {icon}
       </div>
-      <p className="text-sm font-bold text-slate-300">{title}</p>
+      <p className="text-sm font-bold text-muted-foreground">{title}</p>
       {description && (
-        <p className="text-xs font-mono text-slate-500 max-w-sm mx-auto leading-relaxed">{description}</p>
+        <p className="text-xs text-subtle max-w-sm mx-auto leading-relaxed">{description}</p>
       )}
       {action && (
         <button
           onClick={action.onClick}
-          className="inline-flex items-center gap-1.5 text-xs text-pink-400 hover:text-pink-300 font-mono font-bold cursor-pointer"
+          className="inline-flex items-center gap-1.5 text-xs text-primary hover:text-primary font-bold cursor-pointer"
         >
           {action.label}
         </button>
