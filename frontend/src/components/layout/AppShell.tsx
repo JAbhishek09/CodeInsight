@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BarChart3, BookOpen, Brain, Download, House, LogOut, Moon, Network, Sun, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, Brain, Download, House, LogOut, Moon, Network, Sun, UserRound, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/context/ThemeContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 const NAV = [
   { to: '/home', label: 'Home', Icon: House },
   { to: '/patterns', label: 'Patterns', Icon: Network },
+  { to: '/drill', label: 'Drill', Icon: Zap },
   { to: '/problems', label: 'Problems', Icon: BookOpen },
   { to: '/analytics', label: 'Analytics', Icon: BarChart3 },
 ];
@@ -121,7 +122,7 @@ function MobileBars() {
 
       <nav
         aria-label="Main"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         {tabs.map(({ to, label, Icon }) => {
           const active = isActive(to);

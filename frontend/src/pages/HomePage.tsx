@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, CalendarClock, CheckCircle2, ExternalLink, EyeOff, Loader2, RotateCcw, Sparkles, Target,
+  ArrowRight, CalendarClock, CheckCircle2, ExternalLink, EyeOff, Loader2, RotateCcw, Sparkles, Target, Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
@@ -157,6 +157,15 @@ export default function HomePage() {
           )}
 
           {d.focus && <FocusCard focus={d.focus} />}
+
+          <Link to="/drill" className="group flex items-center gap-4 rounded-xl border border-border bg-surface-1 p-4 transition-colors hover:border-primary/50">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary"><Zap className="size-5" aria-hidden /></span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-foreground">Guess the pattern — 2 minutes</span>
+              <span className="block text-xs text-muted-foreground">Ten quick cards, no coding. Sharpens recognition{d.recognition.accuracy != null ? ` (now ${pct(d.recognition.accuracy)})` : ''}.</span>
+            </span>
+            <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden />
+          </Link>
 
           <section aria-labelledby="plan-title" className="space-y-3">
             <div className="flex items-baseline justify-between">

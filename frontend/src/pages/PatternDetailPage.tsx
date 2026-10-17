@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, ExternalLink, Eye, Search } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, Eye, Search, Zap } from 'lucide-react';
 import { usePattern } from '../hooks/usePatterns';
 import QueryError from '../components/QueryError';
 import DifficultyBadge from '../components/DifficultyBadge';
 import CodeBlock from '@/components/problem/CodeBlock';
 import { Panel } from '@/components/panel';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { patternStyle } from '@/lib/patterns';
@@ -75,11 +76,14 @@ export default function PatternDetailPage() {
         <p className="text-xs font-medium uppercase tracking-wide pat-text">Pattern</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight text-foreground">{p.name}</h1>
         <p className="mt-2 max-w-2xl text-base text-foreground/80">{p.short}</p>
-        <div className="mt-5 flex items-center gap-3">
+        <div className="mt-5 flex flex-wrap items-center gap-3">
           <div className="h-2 w-48 overflow-hidden rounded-full bg-background/60">
             <div className="h-full rounded-full transition-[width] duration-700" style={{ width: `${pct}%`, background: 'var(--pc)' }} />
           </div>
           <span className="text-sm tabular-nums text-foreground">{solved}/{total} key problems solved</span>
+          <Button size="sm" variant="outline" className="sm:ml-auto" asChild>
+            <Link to={`/drill?pattern=${p.key}`}><Zap /> Drill this pattern</Link>
+          </Button>
         </div>
       </header>
 

@@ -57,15 +57,16 @@ export interface PatternFeedback {
   predicted: string;
   predictedName: string;
   verdict: string | null;
-  source: 'extension' | 'app';
+  source: 'extension' | 'app' | 'drill';
   createdAt: string;
   mapped: boolean;
   outcome: 'recognised' | 'right-pattern-bug' | 'missed' | 'wrong-approach' | 'unsure' | 'unmapped';
   title: string;
   message: string;
   isCorrect?: boolean | null;
-  pattern?: { key: string; name: string; cue: string; complexity: string };
+  pattern?: { key: string; name: string; short?: string; cue: string; complexity: string };
   secondary?: { key: string; name: string } | null;
+  problem?: { title: string; difficulty: 'Easy' | 'Medium' | 'Hard'; url: string };
 }
 
 export interface PredictionStats {
@@ -143,4 +144,18 @@ export interface TodayPlan {
   reviews: { due: number; upcomingThisWeek: number };
   recognition: { attempts: number; accuracy: number | null };
   patterns: { key: string; name: string; solved: number; total: number; accuracy: number | null }[];
+}
+
+/** See backend/services/drillService.js drillDeck(). */
+export interface DrillCard {
+  slug: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  prompt: string;
+  missedBefore: boolean;
+}
+
+export interface DrillDeck {
+  pattern: { key: string; name: string } | null;
+  cards: DrillCard[];
+  options: { key: string; name: string }[];
 }

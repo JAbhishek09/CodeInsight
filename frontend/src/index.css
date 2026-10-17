@@ -228,6 +228,15 @@
   .pat-glow   { box-shadow: 0 0 0 1px color-mix(in oklab, var(--pc) 60%, transparent),
                             0 0 24px color-mix(in oklab, var(--pc) calc(var(--pat-glow) * 100%), transparent); }
   .pat-pulse  { animation: patPulse 2.4s ease-in-out infinite; }
+
+  /* Guess-the-pattern drill */
+  .drill-card   { animation: drillIn 0.28s cubic-bezier(.2,.8,.2,1) both; }
+  .drill-reveal { animation: fadeSlideIn 0.22s ease both; }
+}
+
+@keyframes drillIn {
+  from { opacity: 0; transform: translateX(18px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
 }
 
 @keyframes patPulse {

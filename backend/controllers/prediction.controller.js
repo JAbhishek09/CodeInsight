@@ -10,7 +10,7 @@ import {
 
 /**
  * @desc    Save a pattern guess. source=extension waits for the submission;
- *          source=app resolves now and returns the feedback.
+ *          source=app|drill resolves now and returns the feedback.
  * @route   POST /api/predictions  { slug, predicted, source }
  * @access  Private
  */
@@ -18,7 +18,7 @@ export const createPrediction = asyncHandler(async (req, res) => {
   const { slug, predicted, source = 'extension' } = req.body ?? {};
   if (!isValidSlug(slug)) { res.status(400); throw new Error('Invalid problem slug.'); }
   if (!isValidPrediction(predicted)) { res.status(400); throw new Error('Unknown pattern.'); }
-  if (!['extension', 'app'].includes(source)) { res.status(400); throw new Error('Invalid source.'); }
+  if (!['extension', 'app', 'drill'].includes(source)) { res.status(400); throw new Error('Invalid source.'); }
 
   const { prediction, feedback } = await recordPrediction({ userId: req.user._id, slug, predicted, source });
   res.status(201).json({ success: true, data: { predictionId: String(prediction._id), feedback } });

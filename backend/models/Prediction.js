@@ -5,13 +5,14 @@ import mongoose from 'mongoose';
  * instead of (app) seeing the answer. See docs/PATTERN_MVP_PLAN.md.
  *
  * Extension predictions stay open until the next submission for that problem
- * arrives; app predictions resolve immediately.
+ * arrives; app and drill (guess-the-pattern mode) predictions resolve
+ * immediately.
  */
 const PredictionSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     slug: { type: String, required: true },                 // LeetCode titleSlug
-    source: { type: String, enum: ['extension', 'app'], required: true },
+    source: { type: String, enum: ['extension', 'app', 'drill'], required: true },
     predicted: { type: String, required: true },            // pattern key or 'unsure'
     actual: { type: String, default: null },                // pattern key, null if unmapped
     isCorrect: { type: Boolean, default: null },            // null when unmapped or unsure

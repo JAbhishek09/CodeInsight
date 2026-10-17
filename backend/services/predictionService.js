@@ -48,7 +48,7 @@ export function buildFeedback(pred) {
     return { ...base, mapped: false, outcome: 'unmapped', title: 'Not in the pattern map yet', message: 'We’ll add this problem soon — your guess is saved.' };
   }
 
-  const pattern = { key: map.pattern, name: nameOf(map.pattern), cue: map.cue, complexity: map.complexity };
+  const pattern = { key: map.pattern, name: nameOf(map.pattern), short: patternByKey.get(map.pattern)?.short ?? '', cue: map.cue, complexity: map.complexity };
   const secondary = map.secondary ? { key: map.secondary, name: nameOf(map.secondary) } : null;
   const accepted = pred.verdict === 'Accepted';
   const failed = pred.verdict && !accepted;
@@ -76,7 +76,10 @@ export function buildFeedback(pred) {
     message = `The clue: ${pattern.cue}.` + (outcome === 'wrong-approach' ? ' That’s likely why it timed out.' : '');
   }
 
-  return { ...base, mapped: true, pattern, secondary, isCorrect: pred.isCorrect, outcome, title, message };
+  return {
+    ...base, mapped: true, pattern, secondary, isCorrect: pred.isCorrect, outcome, title, message,
+    problem: { title: map.title, difficulty: map.difficulty, url: `https://leetcode.com/problems/${pred.slug}/` },
+  };
 }
 
 /**
@@ -88,9 +91,10 @@ export async function recordPrediction({ userId, slug, predicted, source }) {
   const actual = map?.pattern ?? null;
   const isCorrect = !actual || predicted === UNSURE ? null : predicted === actual || predicted === map.secondary;
 
-  if (source === 'app') {
+  if (source === 'app' || source === 'drill') {
     const pred = await Prediction.create({ user: userId, slug, source, predicted, actual, isCorrect, resolvedAt: new Date() });
-    await queueIfMissed(userId, pred);
+    // Drills re-show misses in the next deck; the review queue is for re-solving.
+    if (source === 'app') await queueIfMissed(userId, pred);
     return { prediction: pred, feedback: buildFeedback(pred) };
   }
 
@@ -124,9 +128,9 @@ export async function resolveOnSubmission({ userId, slug, submissionId, verdict 
   return buildFeedback(pred);
 }
 
-/** The most recent resolved guess for a problem, for the app's problem page. */
+/** The most recent resolved guess for a problem, for the app's problem page (drills excluded). */
 export async function latestFeedback(userId, slug) {
-  const pred = await Prediction.findOne({ user: userId, slug, resolvedAt: { $ne: null } }).sort({ resolvedAt: -1 });
+  const pred = await Prediction.findOne({ user: userId, slug, resolvedAt: { $ne: null }, source: { $ne: 'drill' } }).sort({ resolvedAt: -1 });
   return buildFeedback(pred);
 }
 
