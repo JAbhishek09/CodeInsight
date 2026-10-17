@@ -16,11 +16,15 @@ import ProblemDetailPage from './pages/ProblemDetailPage';
 import InsightsPage from './pages/InsightsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import Navbar from './components/Navbar';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/queryClient';
+import { TooltipProvider } from './components/ui/tooltip';
+import { Toaster } from './components/ui/sonner';
 
 // Shared authenticated shell — uses CSS vars so it adapts to dark/light mode.
 function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-app text-primary transition-colors duration-200">
+    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
         {children}
@@ -32,7 +36,7 @@ function AuthLayout({ children }: { children: React.ReactNode }) {
 // Auth pages (no Navbar) — still respect theme
 function AuthPageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-app text-primary flex items-center justify-center transition-colors duration-200">
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center transition-colors duration-200">
       {children}
     </div>
   );
@@ -61,9 +65,11 @@ function ProblemsWrapper() {
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthProvider>
         <ThemeProvider>
+        <TooltipProvider delayDuration={200}>
           <Routes>
             {/* Public */}
             <Route path="/login"    element={<LoginPageWrapper />} />
@@ -93,8 +99,11 @@ export default function App() {
             <Route path="/"  element={<Navigate to="/login" replace />} />
             <Route path="*"  element={<Navigate to="/login" replace />} />
           </Routes>
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
+    </QueryClientProvider>
   );
 }
