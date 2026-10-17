@@ -85,8 +85,8 @@ const ProblemSchema = new mongoose.Schema(
     status:         { type: String, enum: { values: ['Solved', 'Attempted', 'To Do'], message: 'Invalid status' }, default: 'Solved' },
     category:       { type: String, trim: true, default: 'General' },
     notes:          { type: String, trim: true },
-    timeComplexity:  { type: String, trim: true, default: 'O(N)' },
-    spaceComplexity: { type: String, trim: true, default: 'O(N)' },
+    timeComplexity:  { type: String, trim: true, default: '' },
+    spaceComplexity: { type: String, trim: true, default: '' },
 
     submissions: [SubmissionSchema],
 

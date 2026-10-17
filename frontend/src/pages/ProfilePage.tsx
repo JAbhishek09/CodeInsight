@@ -8,7 +8,7 @@ import { useAnalytics } from '../hooks/useAnalytics';
 import { updateProfile } from '../api/auth.api';
 import ProfileInput from '../components/ProfileInput';
 import HistoryImport from '../components/HistoryImport';
-import { Panel } from '@/components/dashboard/widgets';
+import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';

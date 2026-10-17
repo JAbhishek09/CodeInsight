@@ -4,6 +4,8 @@ import {
   repairDifficultyAndTags, verifyLeetcodeSession, removeLeetcodeData,
 } from '../api/import.api';
 import { useAuth } from '../hooks/useAuth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Download, AlertCircle, CheckCircle2, ChevronDown, Eye, EyeOff, Loader2,
   Square, Tags, Trash2, ExternalLink, ShieldCheck,
@@ -249,7 +251,7 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
     '';
 
   return (
-    <section className="ci-card relative overflow-hidden">
+    <section className="relative overflow-hidden rounded-lg border border-border bg-surface-1">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="p-5 sm:p-6 border-b border-[var(--border)]">
@@ -296,14 +298,14 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
             Your LeetCode session
           </label>
           <div className="relative">
-            <input
+            <Input
               id="lc-session"
               type={showCookie ? 'text' : 'password'}
               placeholder="Paste the LEETCODE_SESSION value"
               value={sessionCookie}
               onChange={(e) => { setSessionCookie(e.target.value); setVerifiedAs(null); setError(null); }}
               disabled={running}
-              className="ci-input pr-10 disabled:opacity-50"
+              className="pr-10 font-mono"
               autoComplete="off"
               spellCheck={false}
             />
@@ -350,14 +352,10 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
 
         {/* ── Primary action ────────────────────────────────────────────────── */}
         {!running ? (
-          <button
-            onClick={handleImport}
-            disabled={!session || busyAction !== null}
-            className="ci-btn-primary w-full flex items-center justify-center gap-2 text-sm px-4 py-3 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <Download className="w-4 h-4" />
+          <Button onClick={handleImport} disabled={!session || busyAction !== null} size="lg" className="w-full">
+            <Download />
             {hasData ? 'Update my LeetCode history' : 'Import my LeetCode history'}
-          </button>
+          </Button>
         ) : (
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-4" aria-live="polite">
             {/* Stepper */}
@@ -382,9 +380,9 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
                 <span className="truncate">{stageDetail}</span>
               </p>
-              <button onClick={handleStop} className="ci-btn-secondary flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0">
-                <Square className="w-3 h-3" /> Stop
-              </button>
+              <Button variant="outline" size="sm" onClick={handleStop} className="shrink-0">
+                <Square /> Stop
+              </Button>
             </div>
             <p className="text-[10px] text-[var(--text-muted)]">
               Large histories take a few minutes. Keep this window open until it finishes.
@@ -441,14 +439,10 @@ export default function HistoryImport({ lastHistoryImportAt, onImportComplete }:
                   <p className="text-xs font-bold text-[var(--foreground)]">Refresh tags & difficulty</p>
                   <p className="text-[11px] text-[var(--text-muted)]">Re-fetch topic tags and difficulty for every problem. Needs the session above.</p>
                 </div>
-                <button
-                  onClick={handleRefreshTags}
-                  disabled={running || busyAction !== null}
-                  className="ci-btn-secondary flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg shrink-0 disabled:opacity-40"
-                >
-                  {busyAction === 'tags' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tags className="w-3.5 h-3.5" />}
+                <Button variant="outline" size="sm" onClick={handleRefreshTags} disabled={running || busyAction !== null} className="shrink-0">
+                  {busyAction === 'tags' ? <Loader2 className="animate-spin" /> : <Tags />}
                   Refresh
-                </button>
+                </Button>
               </div>
 
               <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/20 p-3.5">

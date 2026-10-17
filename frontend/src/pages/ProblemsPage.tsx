@@ -5,12 +5,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAnalytics } from '../hooks/useAnalytics';
-import { useDeleteProblem, useProblem, useProblemListView, type ProblemListItem } from '../hooks/useProblems';
+import { useDeleteProblem, useProblemListView, type ProblemListItem } from '../hooks/useProblems';
 import QueryError from '../components/QueryError';
 import DifficultyBadge from '../components/DifficultyBadge';
-import { Modal } from '../components/Modal';
-import AddProblemForm from './AddProblemPage';
-import EditProblemForm from './EditProblemPage';
+import ProblemFormDialog from '@/components/problem/ProblemFormDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -107,24 +105,6 @@ function TableSkeleton() {
   );
 }
 
-/** Edit loads the full problem first — list rows don't carry notes/complexity. */
-function EditModal({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const q = useProblem(id ?? undefined);
-  return (
-    <Modal isOpen={!!id} onClose={onClose} title="Edit problem">
-      {q.isPending ? <Skeleton className="h-64" />
-        : q.error ? <QueryError message={q.error.message} onRetry={() => q.refetch()} />
-        : q.data && (
-          <EditProblemForm
-            problem={q.data}
-            onSuccess={() => { onClose(); toast.success('Problem updated'); }}
-            onCancel={onClose}
-          />
-        )}
-    </Modal>
-  );
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
@@ -166,14 +146,15 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
   const summary = useAnalytics('all');
   const del = useDeleteProblem();
 
-  const [showAdd, setShowAdd] = useState(params.get('new') === '1');
-  const [editId, setEditId] = useState<string | null>(null);
+  const [formMode, setFormMode] = useState<{ kind: 'add' } | { kind: 'edit'; id: string } | null>(
+    params.get('new') === '1' ? { kind: 'add' } : null
+  );
   const [deleteTarget, setDeleteTarget] = useState<ProblemListItem | null>(null);
 
   // Dashboard's "Track problem" links here with ?new=1
   useEffect(() => {
     if (params.get('new') === '1') {
-      setShowAdd(true);
+      setFormMode({ kind: 'add' });
       setParam({ new: '' }, true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,7 +196,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
               : 'Everything you’ve tracked or imported'}
           </p>
         </div>
-        <Button size="sm" onClick={() => setShowAdd(true)}><Plus /> Add problem</Button>
+        <Button size="sm" onClick={() => setFormMode({ kind: 'add' })}><Plus /> Add problem</Button>
       </div>
 
       {/* Toolbar */}
@@ -316,7 +297,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
                       <div className="flex justify-end gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                         {manual ? (
                           <>
-                            <Button variant="ghost" size="icon-sm" aria-label={`Edit ${p.title}`} onClick={() => setEditId(p._id)}><Pencil /></Button>
+                            <Button variant="ghost" size="icon-sm" aria-label={`Edit ${p.title}`} onClick={() => setFormMode({ kind: 'edit', id: p._id })}><Pencil /></Button>
                             <Button variant="ghost" size="icon-sm" aria-label={`Delete ${p.title}`} onClick={() => setDeleteTarget(p)}><Trash2 /></Button>
                           </>
                         ) : p.url ? (
@@ -350,13 +331,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
         )}
       </div>
 
-      {/* Add */}
-      <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Track a problem">
-        <AddProblemForm onSuccess={() => { setShowAdd(false); toast.success('Problem added'); }} onCancel={() => setShowAdd(false)} />
-      </Modal>
-
-      {/* Edit */}
-      <EditModal id={editId} onClose={() => setEditId(null)} />
+      <ProblemFormDialog mode={formMode} onClose={() => setFormMode(null)} />
 
       {/* Delete confirmation */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>

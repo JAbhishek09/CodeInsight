@@ -1,23 +1,25 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { ProblemsPage } from './pages/ProblemsPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage'; 
-// (Adjust the path if you saved them in a different folder!)
-import ProfilePage from './pages/ProfilePage';
-import ProblemPage from './pages/ProblemPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import Navbar from './components/Navbar';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import AppShell from './components/layout/AppShell';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Toaster } from './components/ui/sonner';
+
+// Signed-in pages load on demand so the sign-in screen (and each page) ships
+// only the code it needs — the charts library is the bulk of it.
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const ProblemsPage = lazy(() => import('./pages/ProblemsPage').then((m) => ({ default: m.ProblemsPage })));
+const ProblemPage = lazy(() => import('./pages/ProblemPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 
 // Old /analysis/:id links now live on the problem page's AI analysis tab.
 function AnalysisRedirect() {
@@ -25,15 +27,14 @@ function AnalysisRedirect() {
   return <Navigate to={`/problems/${problemId}?tab=analysis`} replace />;
 }
 
-// Shared authenticated shell — uses CSS vars so it adapts to dark/light mode.
+// Signed-in pages share the app shell (sidebar / mobile tabs).
 function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-background text-foreground transition-colors duration-200">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
+    <AppShell>
+      <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-surface-1" aria-busy="true" aria-label="Loading page" />}>
         {children}
-      </main>
-    </div>
+      </Suspense>
+    </AppShell>
   );
 }
 
