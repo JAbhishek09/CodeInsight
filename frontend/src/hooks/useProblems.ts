@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createProblem,
@@ -118,6 +117,26 @@ export function useAnalyzeProblem(id: string | undefined) {
   });
 }
 
+/**
+ * Apply an edit to every cached problem list. Two shapes share the
+ * ['problems', 'list'] key: full arrays (Problem[]) and paged list views
+ * ({ data: ProblemListItem[], total, ... }).
+ */
+function patchCachedLists(
+  qc: ReturnType<typeof useQueryClient>,
+  fn: <T extends { _id: string }>(rows: T[]) => T[]
+) {
+  qc.setQueriesData<unknown>({ queryKey: ['problems', 'list'] }, (prev: unknown) => {
+    if (Array.isArray(prev)) return fn(prev as Problem[]);
+    if (prev && typeof prev === 'object' && Array.isArray((prev as ProblemListPage).data)) {
+      const page = prev as ProblemListPage;
+      const data = fn(page.data);
+      return { ...page, data, total: page.total - (page.data.length - data.length) };
+    }
+    return prev;
+  });
+}
+
 export function useCreateProblem() {
   const qc = useQueryClient();
   return useMutation({
@@ -133,9 +152,7 @@ export function useUpdateProblem() {
       updateProblem(id, data as Partial<ProblemPayload>),
     onSuccess: (_res, { id, data }) => {
       // Patch cached lists immediately, then refetch in the background.
-      qc.setQueriesData<Problem[]>({ queryKey: ['problems', 'list'] }, (prev) =>
-        prev?.map((p) => (p._id === id ? { ...p, ...data } as Problem : p))
-      );
+      patchCachedLists(qc, (rows) => rows.map((p) => (p._id === id ? { ...p, ...data } : p)));
       qc.invalidateQueries({ queryKey: problemKeys.all });
     },
   });
@@ -146,35 +163,8 @@ export function useDeleteProblem() {
   return useMutation({
     mutationFn: (id: string) => deleteProblem(id),
     onSuccess: (_res, id) => {
-      qc.setQueriesData<Problem[]>({ queryKey: ['problems', 'list'] }, (prev) => prev?.filter((p) => p._id !== id));
+      patchCachedLists(qc, (rows) => rows.filter((p) => p._id !== id));
       qc.invalidateQueries({ queryKey: problemKeys.all });
     },
   });
-}
-
-/**
- * Problems page hook: filtered list (search debounced 300ms) plus delete and
- * status-toggle actions. Errors from the actions are thrown to the caller.
- */
-export function useProblems(filters: ProblemFilters = {}) {
-  const [debouncedSearch, setDebouncedSearch] = useState(filters.search ?? '');
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(filters.search ?? ''), 300);
-    return () => clearTimeout(t);
-  }, [filters.search]);
-
-  const query = useProblemList({ ...filters, search: debouncedSearch });
-  const del = useDeleteProblem();
-  const update = useUpdateProblem();
-
-  return {
-    problems: query.data ?? [],
-    loading: query.isPending,
-    fetching: query.isFetching,
-    error: query.error ? query.error.message || 'Failed to load problems' : null,
-    refetch: query.refetch,
-    removeProblem: (id: string) => del.mutateAsync(id).then(() => undefined),
-    toggleStatus: (id: string, status: ProblemStatus) =>
-      update.mutateAsync({ id, data: { status } }).then(() => undefined),
-  };
 }

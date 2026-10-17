@@ -59,7 +59,7 @@ function DashboardWrapper() {
   const navigate = useNavigate();
   return (
     <AuthLayout>
-      <DashboardPage onNavigate={navigate} onOpenNewProblem={() => navigate('/problems')} />
+      <DashboardPage onNavigate={navigate} onOpenNewProblem={() => navigate('/problems?new=1')} />
     </AuthLayout>
   );
 }
