@@ -1,4 +1,4 @@
-import { dayKey } from '../utils/stats';
+import { dayKey } from '../lib/format';
 
 interface HeatmapProps {
   /** date(YYYY-MM-DD) → count of solves that day */

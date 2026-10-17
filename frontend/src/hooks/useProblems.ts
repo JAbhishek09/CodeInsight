@@ -113,8 +113,16 @@ export function useAnalyzeProblem(id: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => triggerAnalysis(id!),
-    onSettled: () => qc.invalidateQueries({ queryKey: problemKeys.all }),
+    onSettled: () => {
+      invalidateProblemData(qc);
+    },
   });
+}
+
+/** Problems changed: refetch problem lists/details and every analytics view built from them. */
+function invalidateProblemData(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: problemKeys.all });
+  qc.invalidateQueries({ queryKey: ['analytics'] });
 }
 
 /**
@@ -141,7 +149,7 @@ export function useCreateProblem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: ProblemPayload) => createProblem(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: problemKeys.all }),
+    onSuccess: () => invalidateProblemData(qc),
   });
 }
 
@@ -153,7 +161,7 @@ export function useUpdateProblem() {
     onSuccess: (_res, { id, data }) => {
       // Patch cached lists immediately, then refetch in the background.
       patchCachedLists(qc, (rows) => rows.map((p) => (p._id === id ? { ...p, ...data } : p)));
-      qc.invalidateQueries({ queryKey: problemKeys.all });
+      invalidateProblemData(qc);
     },
   });
 }
@@ -164,7 +172,7 @@ export function useDeleteProblem() {
     mutationFn: (id: string) => deleteProblem(id),
     onSuccess: (_res, id) => {
       patchCachedLists(qc, (rows) => rows.filter((p) => p._id !== id));
-      qc.invalidateQueries({ queryKey: problemKeys.all });
+      invalidateProblemData(qc);
     },
   });
 }

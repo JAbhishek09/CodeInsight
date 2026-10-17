@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
 import {
-  Brain, LayoutDashboard, BookOpen, Sparkles, BarChart3,
+  Brain, LayoutDashboard, BookOpen, BarChart3,
   LogOut, Settings, Menu, Download, Sun, Moon,
 } from 'lucide-react';
 import Sidebar from './Sidebar';
@@ -12,7 +12,6 @@ import ImportModal from './ImportModal';
 const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard',   Icon: LayoutDashboard },
   { path: '/problems',  label: 'Problems',    Icon: BookOpen },
-  { path: '/insights',  label: 'AI Insights', Icon: Sparkles },
   { path: '/analytics', label: 'Analytics',   Icon: BarChart3 },
 ];
 

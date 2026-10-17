@@ -173,7 +173,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenNewProblem }
               <TopicList topics={s.topics} />
             </Panel>
 
-            <Panel title="AI reviews" action={<PanelLink to="/insights">Insights</PanelLink>}>
+            <Panel title="AI reviews" action={<PanelLink to="/analytics?tab=ai">Insights</PanelLink>}>
               <div className="space-y-4">
                 <div>
                   <p className="text-2xl font-semibold tabular-nums text-foreground">

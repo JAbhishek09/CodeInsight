@@ -220,3 +220,42 @@ UI guidance:
 - When `status === 'pending'`, show progress. The analyzer treats a `pendingSince` older than 3 minutes as a dead job, so the UI may offer a retry.
 
 `POST /api/analyze/:id` analyses the latest Accepted submission with code, falling back to the latest submission with code of any verdict, which is the same code `isStale` compares against. A fresh analysis is therefore never stale.
+---
+
+## GET /api/analytics/ai-insights
+
+Data for the AI insights tab. Query param `platform` (`all` | `leetcode` | `codeforces`, default `all`). No submission code is returned.
+
+```jsonc
+{
+  "success": true,
+  "data": {
+    "platform": "all",
+    "counts": {
+      "solved": 600,          // same solved rule as the summary
+      "withCode": 653,        // problems with at least one submission that has code
+      "analyzed": 12,         // problems with a stored AI analysis
+      "stale": 1,             // analyses made for code that has since changed
+      "readyToReview": 590    // solved, has code, no analysis yet
+    },
+    "timeToAccepted": {       // first submission → first Accepted, only when it took >1 try;
+      "sampleSize": 41,       // gaps over 3 days are ignored (came back another day)
+      "avgMinutes": 18,
+      "medianMinutes": 9
+    },
+    "analyzed": [             // newest analysis first
+      {
+        "_id": "…", "title": "Two Sum", "url": "…", "platform": "leetcode",
+        "difficulty": "Easy", "tags": ["Array"],
+        "generatedAt": "2026-10-10T00:00:00.000Z",
+        "isStale": false,
+        "complexity": { "current": "O(n^2) time, O(1) space", "optimal": "O(n) time, O(n) space" },
+        "feedback": ["Use a hash map …"],   // optimizationAreas descriptions (old string shape normalised)
+        "edgeCases": ["Empty array"]        // edgeCasesToConsider
+      }
+    ]
+  }
+}
+```
+
+Grouping `feedback` and `edgeCases` into recurring themes is done in the frontend (`src/lib/insights.ts`).

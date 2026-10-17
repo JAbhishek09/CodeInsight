@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Brain, LayoutDashboard, BookOpen, BarChart3, Sparkles, Settings, X, Download } from 'lucide-react';
+import { Brain, LayoutDashboard, BookOpen, BarChart3, Settings, X, Download } from 'lucide-react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,7 +11,6 @@ interface SidebarProps {
 const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard',   Icon: LayoutDashboard },
   { path: '/problems',  label: 'Problems',    Icon: BookOpen },
-  { path: '/insights',  label: 'AI Insights', Icon: Sparkles },
   { path: '/analytics', label: 'Analytics',   Icon: BarChart3 },
   { path: '/profile',   label: 'Settings',    Icon: Settings },
 ];

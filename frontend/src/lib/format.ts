@@ -32,3 +32,11 @@ export function dateTime(date: string | number | Date | null | undefined): strin
     month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
   });
 }
+
+/** Local calendar day as YYYY-MM-DD (matches the summary's tz-bucketed days). */
+export function dayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}

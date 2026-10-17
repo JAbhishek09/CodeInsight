@@ -12,7 +12,6 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 // (Adjust the path if you saved them in a different folder!)
 import ProfilePage from './pages/ProfilePage';
 import ProblemPage from './pages/ProblemPage';
-import InsightsPage from './pages/InsightsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import Navbar from './components/Navbar';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -94,7 +93,7 @@ export default function App() {
             <Route path="/profile"
               element={<ProtectedRoute><AuthLayout><ProfilePage /></AuthLayout></ProtectedRoute>} />
             <Route path="/insights"
-              element={<ProtectedRoute><AuthLayout><InsightsPage /></AuthLayout></ProtectedRoute>} />
+              element={<Navigate to="/analytics?tab=ai" replace />} />
             <Route path="/analytics"
               element={<ProtectedRoute><AuthLayout><AnalyticsPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/analysis/:problemId"
