@@ -237,7 +237,7 @@ export const ProblemCard: React.FC<ProblemCardProps> = ({
 
         {isSynced && (
           <button
-            onClick={(e) => { e.stopPropagation(); navigate(`/analysis/${problem._id}`); }}
+            onClick={(e) => { e.stopPropagation(); navigate(`/problems/${problem._id}?tab=analysis`); }}
             disabled={!hasCodedSubmission}
             className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 border border-border rounded-lg cursor-pointer transition-colors text-[11px]  font-bold ${
               hasCodedSubmission

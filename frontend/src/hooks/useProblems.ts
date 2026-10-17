@@ -8,6 +8,7 @@ import {
   updateProblem,
   type ProblemPayload,
 } from '../api/problems.api';
+import { triggerAnalysis } from '../api/analysis.api';
 import type { Problem, ProblemStatus } from '../types/problem';
 
 export type { Problem };
@@ -47,12 +48,35 @@ export function useAllProblems() {
   return useProblemList();
 }
 
-/** GET /problems/:id → the problem document. */
+/** A 'pending' analysis older than this is a dead job (matches the backend). */
+export const ANALYSIS_STALE_PENDING_MS = 3 * 60 * 1000;
+
+function isAnalysisRunning(problem: Problem | null | undefined) {
+  const meta = problem?.aiAnalysisMeta;
+  if (meta?.status !== 'pending') return false;
+  const since = meta.pendingSince ? new Date(meta.pendingSince).getTime() : 0;
+  return Date.now() - since < ANALYSIS_STALE_PENDING_MS;
+}
+
+/** GET /problems/:id → the problem document. Polls while an AI analysis is running. */
 export function useProblem(id: string | undefined) {
   return useQuery({
     queryKey: problemKeys.detail(id ?? ''),
-    queryFn: async () => (await getProblemById(id!))?.data ?? null,
+    queryFn: async () => ((await getProblemById(id!))?.data ?? null) as Problem | null,
     enabled: Boolean(id),
+    refetchInterval: (query) => (isAnalysisRunning(query.state.data) ? 4000 : false),
+  });
+}
+
+/**
+ * POST /analyze/:id. The problem query is the single source of truth: after the
+ * request it's refetched, and keeps polling while the backend reports 'pending'.
+ */
+export function useAnalyzeProblem(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => triggerAnalysis(id!),
+    onSettled: () => qc.invalidateQueries({ queryKey: problemKeys.all }),
   });
 }
 

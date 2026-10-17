@@ -97,7 +97,7 @@ export default function SubmissionsTable({ problems }: SubmissionsTableProps) {
                     {/* AI Analyze — only if code available */}
                     {hasCode && (
                       <button
-                        onClick={() => navigate(`/analysis/${prob._id}`)}
+                        onClick={() => navigate(`/problems/${prob._id}?tab=analysis`)}
                         className="inline-flex items-center gap-1 text-primary hover:text-primary"
                         title="AI Analysis"
                       >

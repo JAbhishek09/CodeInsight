@@ -230,7 +230,7 @@ export default function InsightsPage() {
                   >
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <button
-                        onClick={() => navigate(`/analysis/${c.problemId}`)}
+                        onClick={() => navigate(`/problems/${c.problemId}?tab=analysis`)}
                         className="text-left text-xs font-bold text-foreground truncate group-hover:text-foreground cursor-pointer"
                       >
                         {c.problemTitle}
@@ -411,7 +411,7 @@ export default function InsightsPage() {
                             {insights.complexityImprovements.map((c) => (
                               <button
                                 key={c.problemId}
-                                onClick={() => navigate(`/analysis/${c.problemId}`)}
+                                onClick={() => navigate(`/problems/${c.problemId}?tab=analysis`)}
                                 className="text-[10px] text-primary hover:text-primary bg-primary/10 hover:bg-primary/10 border border-primary/20 rounded-full px-2.5 py-1 transition-colors cursor-pointer"
                               >
                                 {c.problemTitle}

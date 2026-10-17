@@ -219,4 +219,4 @@ UI guidance:
 - When `status === 'error'`, show `error`.
 - When `status === 'pending'`, show progress. The analyzer treats a `pendingSince` older than 3 minutes as a dead job, so the UI may offer a retry.
 
-Note: `POST /api/analyze/:id` currently analyses the latest submission **with code of any verdict**. If that is a newer failed attempt, the result's hash matches `latestCodeHash` but not `latestAcceptedHash`, so `isStale` is `true` straight after a re-run.
+`POST /api/analyze/:id` analyses the latest Accepted submission with code, falling back to the latest submission with code of any verdict, which is the same code `isStale` compares against. A fresh analysis is therefore never stale.

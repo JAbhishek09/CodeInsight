@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
@@ -11,8 +11,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage'; 
 // (Adjust the path if you saved them in a different folder!)
 import ProfilePage from './pages/ProfilePage';
-import AnalysisPage from './pages/AnalysisPage';
-import ProblemDetailPage from './pages/ProblemDetailPage';
+import ProblemPage from './pages/ProblemPage';
 import InsightsPage from './pages/InsightsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import Navbar from './components/Navbar';
@@ -20,6 +19,12 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Toaster } from './components/ui/sonner';
+
+// Old /analysis/:id links now live on the problem page's AI analysis tab.
+function AnalysisRedirect() {
+  const { problemId } = useParams<{ problemId: string }>();
+  return <Navigate to={`/problems/${problemId}?tab=analysis`} replace />;
+}
 
 // Shared authenticated shell — uses CSS vars so it adapts to dark/light mode.
 function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -85,7 +90,7 @@ export default function App() {
             <Route path="/problems"
               element={<ProtectedRoute><ProblemsWrapper /></ProtectedRoute>} />
             <Route path="/problems/:problemId"
-              element={<ProtectedRoute><AuthLayout><ProblemDetailPage /></AuthLayout></ProtectedRoute>} />
+              element={<ProtectedRoute><AuthLayout><ProblemPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/profile"
               element={<ProtectedRoute><AuthLayout><ProfilePage /></AuthLayout></ProtectedRoute>} />
             <Route path="/insights"
@@ -93,7 +98,7 @@ export default function App() {
             <Route path="/analytics"
               element={<ProtectedRoute><AuthLayout><AnalyticsPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/analysis/:problemId"
-              element={<ProtectedRoute><AuthLayout><AnalysisPage /></AuthLayout></ProtectedRoute>} />
+              element={<AnalysisRedirect />} />
 
             {/* Fallbacks */}
             <Route path="/"  element={<Navigate to="/login" replace />} />

@@ -38,10 +38,13 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
     throw new Error('Problem not found');
   }
 
-  // Find the most recent submission that has actual code
-  const latestWithCode = [...problem.submissions]
+  // Analyse the latest Accepted submission with code, falling back to the latest
+  // submission with code of any verdict. Same rule as aiAnalysisMeta.isStale
+  // (utils/aiMeta.js), so a fresh analysis is never reported as stale.
+  const withCode = [...problem.submissions]
     .sort((a, b) => b.submittedAt - a.submittedAt)
-    .find((s) => s.code?.trim().length > 0);
+    .filter((s) => s.code?.trim().length > 0);
+  const latestWithCode = withCode.find((s) => s.verdict === 'Accepted') ?? withCode[0];
 
   if (!latestWithCode) {
     res.status(400);
