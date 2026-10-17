@@ -68,11 +68,7 @@ export default function ProblemDetailPage() {
           <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               {problem.platform && problem.platform !== 'manual' && (
-                <span className={`text-[10px]  px-2 py-0.5 rounded border ${
-                  problem.platform === 'leetcode'
-                    ? 'bg-warning/10 text-warning border-warning/20'
-                    : 'bg-primary/10 text-primary border-primary/20'
-                }`}>
+                <span className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-surface-2 text-muted-foreground capitalize">
                   {problem.platform}
                 </span>
               )}

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import VerdictBadge from './VerdictBadge';
+import DifficultyBadge from './DifficultyBadge';
 import { ChevronRight, Eye, Brain } from 'lucide-react';
 
 interface Submission {
@@ -72,17 +73,11 @@ export default function SubmissionsTable({ problems }: SubmissionsTableProps) {
                   {prob.title}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-0.5 rounded border text-[10px] ${
-                    prob.platform === 'leetcode'
-                      ? 'bg-warning/10 text-warning border-warning/20'
-                      : prob.platform === 'codeforces'
-                      ? 'bg-primary/10 text-primary border-primary/20'
-                      : 'bg-surface-2 text-muted-foreground border-border-strong'
-                  }`}>
+                  <span className="px-2 py-0.5 rounded border border-border bg-surface-2 text-muted-foreground text-[11px] capitalize">
                     {prob.platform}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{prob.difficulty || '—'}</td>
+                <td className="px-4 py-3">{prob.difficulty ? <DifficultyBadge difficulty={prob.difficulty} /> : <span className="text-subtle">—</span>}</td>
                 <td className="px-4 py-3">
                   <VerdictBadge verdict={getBestVerdict(prob.submissions ?? [])} />
                 </td>
