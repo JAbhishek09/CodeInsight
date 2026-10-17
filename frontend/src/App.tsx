@@ -38,21 +38,13 @@ function AuthLayout({ children }: { children: React.ReactNode }) {
 }
 
 // Auth pages (no Navbar) — still respect theme
-function AuthPageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center transition-colors duration-200">
-      {children}
-    </div>
-  );
-}
-
 function LoginPageWrapper() {
   const navigate = useNavigate();
-  return <AuthPageShell><LoginPage onNavigate={navigate} /></AuthPageShell>;
+  return <LoginPage onNavigate={navigate} />;
 }
 function RegisterPageWrapper() {
   const navigate = useNavigate();
-  return <AuthPageShell><RegisterPage onNavigate={navigate} /></AuthPageShell>;
+  return <RegisterPage onNavigate={navigate} />;
 }
 function DashboardWrapper() {
   const navigate = useNavigate();

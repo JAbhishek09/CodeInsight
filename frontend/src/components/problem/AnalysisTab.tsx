@@ -241,7 +241,7 @@ export default function AnalysisTab({ analysis, meta, hasCode, language, onAnaly
           </p>
         </div>
         <Button size="sm" variant="outline" asChild>
-          <Link to="/profile">Go to import</Link>
+          <Link to="/profile?tab=import">Go to import</Link>
         </Button>
       </div>
     );

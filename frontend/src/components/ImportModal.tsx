@@ -81,11 +81,13 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
           )}
 
           {/* Platform handles + sync */}
-          <ProfileInput
-            initialLeetcode={user?.leetcodeHandle}
-            initialCodeforces={user?.codeforcesHandle}
-            onSyncComplete={handleSyncComplete}
-          />
+          <section className="rounded-lg border border-border bg-surface-1 p-4">
+            <ProfileInput
+              initialLeetcode={user?.leetcodeHandle}
+              initialCodeforces={user?.codeforcesHandle}
+              onSyncComplete={handleSyncComplete}
+            />
+          </section>
 
           {/* History import */}
           {user?.leetcodeHandle && (

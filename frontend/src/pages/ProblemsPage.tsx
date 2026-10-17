@@ -268,7 +268,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
             </p>
             {hasFilters
               ? <Button variant="outline" size="sm" onClick={() => { setSearchInput(''); setParam({ q: '', status: '', difficulty: '', platform: '', tag: '' }); }}>Clear filters</Button>
-              : <Button variant="outline" size="sm" asChild><Link to="/profile">Import history</Link></Button>}
+              : <Button variant="outline" size="sm" asChild><Link to="/profile?tab=import">Import history</Link></Button>}
           </div>
         ) : (
           <Table className={cn(list.isFetching && 'opacity-70 transition-opacity')}>

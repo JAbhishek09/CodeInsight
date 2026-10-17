@@ -106,6 +106,39 @@ export const getMe = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Update the logged-in user's name and/or daily goal
+ * @route   PUT /api/auth/profile
+ * @access  Private
+ */
+export const updateProfile = asyncHandler(async (req, res) => {
+  const { name, targetDailySolved } = req.body ?? {};
+  const updates = {};
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 50) {
+      res.status(400);
+      throw new Error('Name must be between 1 and 50 characters.');
+    }
+    updates.name = name.trim();
+  }
+  if (targetDailySolved !== undefined) {
+    const n = Number(targetDailySolved);
+    if (!Number.isInteger(n) || n < 1 || n > 20) {
+      res.status(400);
+      throw new Error('Daily goal must be a whole number from 1 to 20.');
+    }
+    updates.targetDailySolved = n;
+  }
+  if (Object.keys(updates).length === 0) {
+    res.status(400);
+    throw new Error('Nothing to update.');
+  }
+
+  const user = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true }).select('-password');
+  res.status(200).json({ success: true, data: user });
+});
+
 export const forgotPassword = async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });

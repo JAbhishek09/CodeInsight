@@ -1,227 +1,212 @@
-import { useState, useCallback, useMemo } from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { problemKeys, useProblemList } from '../hooks/useProblems';
-import QueryError from '../components/QueryError';
+import { Download, Link2, Loader2, LogOut, UserRound } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '../hooks/useAuth';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { updateProfile } from '../api/auth.api';
 import ProfileInput from '../components/ProfileInput';
 import HistoryImport from '../components/HistoryImport';
-import SubmissionsTable from '../components/SubmissionsTable';
-import {
-  RefreshCw,
-  User,
-  Clock,
-  Settings,
-  Plug,
-  Database,
-  Target,
-  CalendarDays,
-  CheckCircle2,
-  XCircle,
-} from 'lucide-react';
+import { Panel } from '@/components/dashboard/widgets';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
+import { relativeTime } from '@/lib/format';
 
-type SettingsTab = 'account' | 'integrations' | 'data';
+const TABS = ['account', 'connections', 'import'] as const;
+type Tab = (typeof TABS)[number];
+const GOALS = [1, 2, 3, 5, 8, 10];
 
-const TABS: { id: SettingsTab; label: string; Icon: typeof Settings }[] = [
-  { id: 'account', label: 'Account', Icon: Settings },
-  { id: 'integrations', label: 'Integrations', Icon: Plug },
-  { id: 'data', label: 'Synced Data', Icon: Database },
-];
+// ── Account ───────────────────────────────────────────────────────────────────
+
+function AccountTab() {
+  const { user, refreshUser, logout } = useAuth();
+  const qc = useQueryClient();
+  const summary = useAnalytics('all');
+  const [name, setName] = useState(user?.name ?? '');
+  const [goal, setGoal] = useState(user?.targetDailySolved ?? 1);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setName(user?.name ?? '');
+    setGoal(user?.targetDailySolved ?? 1);
+  }, [user?.name, user?.targetDailySolved]);
+
+  const dirty = name.trim() !== (user?.name ?? '') || goal !== (user?.targetDailySolved ?? 1);
+  const nameInvalid = !name.trim();
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (nameInvalid) return;
+    try {
+      setSaving(true);
+      await updateProfile({ name: name.trim(), targetDailySolved: goal });
+      await refreshUser();
+      qc.invalidateQueries({ queryKey: ['analytics'] }); // daily goal lives in the summary
+      toast.success('Profile saved');
+    } catch (err) {
+      toast.error(`Couldn't save: ${(err as Error).message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const s = summary.data;
+  return (
+    <div className="space-y-4">
+      <Panel title="Profile">
+        <form onSubmit={save} className="max-w-md space-y-5">
+          <div className="space-y-1.5">
+            <label htmlFor="profile-name" className="text-sm font-medium text-foreground">Name</label>
+            <Input id="profile-name" value={name} maxLength={50} onChange={(e) => setName(e.target.value)} aria-invalid={nameInvalid || undefined} />
+            {nameInvalid && <p className="text-xs text-warning">Enter your name</p>}
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium text-foreground">Email</p>
+            <p className="text-sm text-muted-foreground">{user?.email}</p>
+          </div>
+          <fieldset className="space-y-1.5">
+            <legend className="text-sm font-medium text-foreground">Daily goal</legend>
+            <div className="flex flex-wrap gap-2">
+              {GOALS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGoal(g)}
+                  aria-pressed={goal === g}
+                  className={cn(
+                    'min-w-10 rounded-md border px-3 py-1.5 text-sm tabular-nums transition-colors',
+                    goal === g ? 'border-primary bg-primary/10 font-semibold text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">Problems to solve per day — drives the Today tile on your dashboard.</p>
+          </fieldset>
+          <Button type="submit" size="sm" disabled={!dirty || saving || nameInvalid}>
+            {saving && <Loader2 className="animate-spin" />} Save changes
+          </Button>
+        </form>
+      </Panel>
+
+      <Panel title="Your practice">
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {[
+            ['Member since', user?.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : '—'],
+            ['Problems solved', s ? s.totals.solved.toLocaleString() : '—'],
+            ['Longest streak', s ? `${s.streak.longest} days` : '—'],
+            ['AI reviews', s ? s.totals.aiAnalyzed.toLocaleString() : '—'],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <dt className="text-xs text-muted-foreground">{label}</dt>
+              <dd className="mt-0.5 text-sm font-semibold text-foreground">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Panel>
+
+      <Panel title="Session">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground">Sign out of CodeInsight on this device.</p>
+          <Button variant="outline" size="sm" onClick={logout}><LogOut /> Sign out</Button>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
-  const [tab, setTab] = useState<SettingsTab>('account');
-  const queryClient = useQueryClient();
-  const lcQuery = useProblemList({ platform: 'leetcode' });
-  const cfQuery = useProblemList({ platform: 'codeforces' });
-  const syncedProblems = useMemo(() => [...(lcQuery.data ?? []), ...(cfQuery.data ?? [])], [lcQuery.data, cfQuery.data]);
-  const loading = lcQuery.isPending || cfQuery.isPending;
-  const fetching = lcQuery.isFetching || cfQuery.isFetching;
-  const syncedError = lcQuery.error ?? cfQuery.error;
-  const loadSyncedProblems = useCallback(() => { lcQuery.refetch(); cfQuery.refetch(); }, [lcQuery, cfQuery]);
+  const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get('tab');
+  const tab: Tab = (TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as Tab) : 'account';
+  const setTab = (t: string) => setParams((p) => { if (t === 'account') p.delete('tab'); else p.set('tab', t); return p; }, { replace: true });
 
   const handleSyncComplete = () => {
     refreshUser();
-    queryClient.invalidateQueries({ queryKey: problemKeys.all });
+    qc.invalidateQueries({ queryKey: ['problems'] });
+    qc.invalidateQueries({ queryKey: ['analytics'] });
   };
 
-  const initials = (user?.name || '?')
-    .split(' ')
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  const initials = (user?.name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto" id="profile-page">
-      {/* Compact account header */}
-      <div className="bg-card border border-border rounded-2xl p-6 relative overflow-hidden">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center text-primary-foreground font-extrabold text-sm shrink-0">
-            {initials}
-          </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-extrabold text-foreground truncate">{user?.name}</h1>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-          </div>
-          {user?.lastSyncedAt && (
-            <div className="ml-auto flex items-center gap-1.5 text-[10px] text-subtle shrink-0">
-              <Clock className="w-3 h-3" />
-              Last synced: {new Date(user.lastSyncedAt).toLocaleString()}
-            </div>
-          )}
+    <div className="mx-auto max-w-4xl space-y-6" id="profile-page">
+      <div className="flex items-center gap-4">
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/15 text-sm font-semibold text-primary" aria-hidden>
+          {initials}
         </div>
-
-        {/* Tabs */}
-        <div className="flex items-center gap-1.5 mt-6 pt-5 border-t border-border overflow-x-auto">
-          {TABS.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs  font-bold transition-colors cursor-pointer shrink-0 ${
-                tab === id
-                  ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'text-subtle border border-transparent hover:text-muted-foreground hover:bg-surface-2'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </button>
-          ))}
+        <div className="min-w-0">
+          <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{user?.name}</h1>
+          <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
         </div>
       </div>
 
-      {/* ── Account tab ─────────────────────────────────────────────────── */}
-      {tab === 'account' && (
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-5">
-          <div className="flex items-center gap-2 border-b border-border pb-4">
-            <User className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold text-foreground">Account Details</h3>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-surface-2 border border-border rounded-xl p-4 space-y-1.5">
-              <p className="text-[10px] text-subtle uppercase tracking-wider flex items-center gap-1.5">
-                <CalendarDays className="w-3 h-3" /> Member Since
-              </p>
-              <p className="text-sm font-bold text-foreground">
-                {user?.createdAt ? new Date(user.createdAt).toLocaleDateString([], { month: 'long', year: 'numeric' }) : '—'}
-              </p>
-            </div>
-            <div className="bg-surface-2 border border-border rounded-xl p-4 space-y-1.5">
-              <p className="text-[10px] text-subtle uppercase tracking-wider flex items-center gap-1.5">
-                <Target className="w-3 h-3" /> Daily Goal
-              </p>
-              <p className="text-sm font-bold text-foreground">{user?.targetDailySolved ?? 1} problem(s) / day</p>
-            </div>
-            <div className="bg-surface-2 border border-border rounded-xl p-4 space-y-1.5">
-              <p className="text-[10px] text-subtle uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-3 h-3" /> Total Solved
-              </p>
-              <p className="text-sm font-bold text-foreground">{user?.solvedProblemsCount ?? 0}</p>
-            </div>
-          </div>
-          <p className="text-[11px] text-faint">
-            Name, email, and daily goal are set at registration and aren't editable from this page yet.
-          </p>
-        </div>
-      )}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList variant="line" className="w-full justify-start gap-4 border-b border-border">
+          <TabsTrigger value="account" className="flex-none"><UserRound /> Account</TabsTrigger>
+          <TabsTrigger value="connections" className="flex-none"><Link2 /> Connections</TabsTrigger>
+          <TabsTrigger value="import" className="flex-none"><Download /> Import</TabsTrigger>
+        </TabsList>
 
-      {/* ── Integrations tab ────────────────────────────────────────────── */}
-      {tab === 'integrations' && (
-        <div className="space-y-6">
-          {/* Platform connection status cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <TabsContent value="account" className="pt-4"><AccountTab /></TabsContent>
+
+        <TabsContent value="connections" className="space-y-4 pt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { name: 'LeetCode', handle: user?.leetcodeHandle, color: 'amber' },
-              { name: 'Codeforces', handle: user?.codeforcesHandle, color: 'blue' },
-            ].map((p) => {
-              const connected = Boolean(p.handle);
-              return (
-                <div
-                  key={p.name}
-                  className="bg-card border border-border rounded-2xl p-5 flex items-center gap-4"
-                >
-                  <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-                      connected
-                        ? p.color === 'amber'
-                          ? 'bg-warning/10 border-warning/20'
-                          : 'bg-primary/10 border-primary/20'
-                        : 'bg-surface-2 border-border-strong'
-                    }`}
-                  >
-                    <Plug className={`w-4 h-4 ${connected ? (p.color === 'amber' ? 'text-warning' : 'text-primary') : 'text-faint'}`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-foreground">{p.name}</p>
-                    <p className="text-[11px] text-subtle truncate">
-                      {connected ? p.handle : 'Not connected'}
-                    </p>
-                  </div>
-                  {connected ? (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-success shrink-0">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Connected
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-faint shrink-0">
-                      <XCircle className="w-3.5 h-3.5" /> Not set
-                    </span>
-                  )}
+              { name: 'LeetCode', handle: user?.leetcodeHandle, url: (h: string) => `https://leetcode.com/u/${h}/` },
+              { name: 'Codeforces', handle: user?.codeforcesHandle, url: (h: string) => `https://codeforces.com/profile/${h}` },
+            ].map((p) => (
+              <div key={p.name} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-1 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">{p.name}</p>
+                  {p.handle
+                    ? <a href={p.url(p.handle)} target="_blank" rel="noopener noreferrer" className="truncate font-mono text-xs text-muted-foreground hover:text-foreground">{p.handle}</a>
+                    : <p className="text-xs text-subtle">Not connected</p>}
                 </div>
-              );
-            })}
+                <span className={cn('inline-flex items-center gap-1.5 text-xs', p.handle ? 'text-success' : 'text-subtle')}>
+                  <span className={cn('size-1.5 rounded-full', p.handle ? 'bg-success' : 'bg-subtle')} aria-hidden />
+                  {p.handle ? 'Connected' : 'Off'}
+                </span>
+              </div>
+            ))}
           </div>
+          <Panel title="Usernames">
+            <ProfileInput
+              initialLeetcode={user?.leetcodeHandle}
+              initialCodeforces={user?.codeforcesHandle}
+              onSyncComplete={handleSyncComplete}
+            />
+          </Panel>
+          {user?.lastSyncedAt && (
+            <p className="text-xs text-muted-foreground">Last synced {relativeTime(user.lastSyncedAt)}</p>
+          )}
+        </TabsContent>
 
-          {/* Platform Handle Entry + Sync */}
-          <ProfileInput
-            initialLeetcode={user?.leetcodeHandle}
-            initialCodeforces={user?.codeforcesHandle}
-            onSyncComplete={handleSyncComplete}
-          />
-
-          {/* Historical Import — shown once a LeetCode handle is set */}
-          {user?.leetcodeHandle && (
+        <TabsContent value="import" className="pt-4">
+          {user?.leetcodeHandle ? (
             <HistoryImport
-              historyImportStatus={(user as any).historyImportStatus ?? 'none'}
-              historyImportCount={(user as any).historyImportCount ?? 0}
-              lastHistoryImportAt={(user as any).lastHistoryImportAt ?? null}
+              historyImportStatus={user.historyImportStatus ?? 'none'}
+              historyImportCount={user.historyImportCount ?? 0}
+              lastHistoryImportAt={user.lastHistoryImportAt ?? null}
               onImportComplete={handleSyncComplete}
             />
-          )}
-        </div>
-      )}
-
-      {/* ── Synced Data tab ─────────────────────────────────────────────── */}
-      {tab === 'data' && (
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <h3 className="text-sm font-bold text-foreground">Synced Submissions</h3>
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] text-subtle">
-                {syncedProblems.length} problem{syncedProblems.length !== 1 ? 's' : ''}
-              </span>
-              <button
-                onClick={loadSyncedProblems}
-                disabled={fetching}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
-            </div>
-          </div>
-
-          {syncedError && (
-            <QueryError title="Couldn't load synced problems" message={syncedError.message} onRetry={loadSyncedProblems} />
-          )}
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="w-6 h-6 animate-spin text-primary" />
-            </div>
           ) : (
-            <SubmissionsTable problems={syncedProblems} />
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+              <p className="text-sm font-semibold text-foreground">Connect your LeetCode account first</p>
+              <p className="max-w-sm text-sm text-muted-foreground">Add your LeetCode username, then import your full history here.</p>
+              <Button size="sm" variant="outline" onClick={() => setTab('connections')}>Go to connections</Button>
+            </div>
           )}
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

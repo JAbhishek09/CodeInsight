@@ -40,6 +40,12 @@ export const saveHandles = async (handles: { leetcode?: string; codeforces?: str
   return res.data;
 };
 
+/** Update name and/or daily goal (1–20). Returns the updated user. */
+export const updateProfile = async (data: { name?: string; targetDailySolved?: number }) => {
+  const res = await api.put('/auth/profile', data);
+  return res.data;
+};
+
 export const logout = () => {
   localStorage.removeItem(TOKEN_KEY);
 };
