@@ -3,7 +3,7 @@ import { X, Download, Wrench, CheckCircle2, AlertTriangle, Loader2 } from 'lucid
 import { useAuth } from '../hooks/useAuth';
 import ProfileInput from './ProfileInput';
 import HistoryImport from './HistoryImport';
-import axios from '../api/axiosInstance';
+import { repairDifficultyAndTags } from '../api/import.api';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -45,13 +45,11 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
       setRepairing(true);
       setRepairError('');
       setRepairResult(null);
-      const res = await axios.post('/api/import/leetcode/repair-difficulty', {
-        sessionCookie: repairSession.trim(),
-      });
-      setRepairResult({ fixed: res.data.fixed, total: res.data.total });
+      const data = await repairDifficultyAndTags(repairSession.trim());
+      setRepairResult({ fixed: data.fixed, total: data.total });
       refreshUser?.();
     } catch (err: any) {
-      setRepairError(err?.response?.data?.message || err.message || 'Repair failed.');
+      setRepairError(err?.message || 'Repair failed.');
     } finally {
       setRepairing(false);
     }

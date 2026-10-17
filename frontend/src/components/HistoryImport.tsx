@@ -47,6 +47,17 @@ export default function HistoryImport({
   const [backfillProcessed, setBackfillProcessed] = useState(0);
 
   const abortRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Stop any in-flight import loop when the component unmounts (e.g. the
+  // ImportModal is closed mid-import) so it doesn't keep hammering LeetCode.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current = true;
+    };
+  }, []);
 
   // Live code coverage — ground truth from MongoDB, not the static
   // historyImportStatus prop (which doesn't know about extension-synced code).
@@ -257,14 +268,18 @@ export default function HistoryImport({
         await runPhase1C(session);
       }
 
+      if (!mountedRef.current) return;
       setCodeComplete(true);
       onImportComplete();
       refreshCoverage();
     } catch (e: any) {
+      if (!mountedRef.current) return;
       setCodeError(e.message || 'Code import failed');
     } finally {
-      setImportingCode(false);
-      setPhase('idle');
+      if (mountedRef.current) {
+        setImportingCode(false);
+        setPhase('idle');
+      }
     }
   };
 

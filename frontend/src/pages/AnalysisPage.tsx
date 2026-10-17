@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getProblemById } from '../api/problems.api';
 import { triggerAnalysis } from '../api/analysis.api';
@@ -16,11 +16,11 @@ interface OptimizationItem {
 }
 
 interface AIAnalysis {
-  complexityAnalysis: { current: string; optimal: string; explanation?: string };
+  complexityAnalysis?: { current: string; optimal: string; explanation?: string };
   hints?: string[];
-  optimizationAreas: (OptimizationItem | string)[];
+  optimizationAreas?: (OptimizationItem | string)[];
   edgeCasesToConsider?: string[];
-  interviewerQuestions: { question: string; expectedAnswer: string }[];
+  interviewerQuestions?: { question: string; expectedAnswer: string }[];
   fromCache?: boolean;
   generatedAt?: string;
 }
@@ -106,6 +106,10 @@ function EdgeCasesSection({ cases }: { cases: string[] }) {
   );
 }
 
+// Polling config for when the backend reports a background job in flight (HTTP 202)
+const POLL_INTERVAL_MS = 4000;
+const MAX_POLL_ATTEMPTS = 15;
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalysisPage() {
   const { problemId } = useParams<{ problemId: string }>();
@@ -115,9 +119,31 @@ export default function AnalysisPage() {
   const [loadingProblem, setLoadingProblem] = useState(true);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  const clearPoll = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  // Stop polling on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clearPoll();
+    };
+  }, [clearPoll]);
 
   useEffect(() => {
     if (!problemId) return;
+    clearPoll();
+    setPendingMessage(null);
     setLoadingProblem(true);
     getProblemById(problemId)
       .then((res) => {
@@ -128,18 +154,37 @@ export default function AnalysisPage() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoadingProblem(false));
-  }, [problemId]);
+  }, [problemId, clearPoll]);
 
-  const runAnalysis = async () => {
+  const runAnalysis = async (attempt = 0) => {
     if (!problemId) return;
+    clearPoll();
     setLoadingAnalysis(true);
     setError(null);
     try {
       const data = await triggerAnalysis(problemId);
+      if (!mountedRef.current) return;
+
+      if (data.pending || !data.analysis) {
+        // A background job is already generating this analysis — poll until ready.
+        if (attempt + 1 >= MAX_POLL_ATTEMPTS) {
+          setPendingMessage(null);
+          setError('Analysis is still being generated. Please try again in a minute.');
+          setLoadingAnalysis(false);
+          return;
+        }
+        setPendingMessage(data.message || 'AI analysis is in progress. Checking again shortly...');
+        pollTimerRef.current = setTimeout(() => runAnalysis(attempt + 1), POLL_INTERVAL_MS);
+        return; // keep loadingAnalysis=true while polling
+      }
+
+      setPendingMessage(null);
       setAnalysis({ ...data.analysis, fromCache: data.fromCache });
+      setLoadingAnalysis(false);
     } catch (e: any) {
+      if (!mountedRef.current) return;
+      setPendingMessage(null);
       setError(e.message || 'Analysis failed');
-    } finally {
       setLoadingAnalysis(false);
     }
   };
@@ -202,7 +247,7 @@ export default function AnalysisPage() {
           </div>
 
           <button
-            onClick={runAnalysis}
+            onClick={() => runAnalysis()}
             disabled={loadingAnalysis || !latestSubmissionWithCode}
             title={!latestSubmissionWithCode ? 'No code available — use the Chrome Extension to capture submissions' : undefined}
             className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:opacity-95 disabled:opacity-40 text-white text-xs font-bold rounded-xl px-5 py-2.5 transition-all shadow-lg shadow-pink-950/20"
@@ -229,6 +274,13 @@ export default function AnalysisPage() {
         <div className="bg-red-950/20 border border-red-500/20 rounded-xl p-4 text-xs font-mono text-red-400">✗ {error}</div>
       )}
 
+      {/* ── Pending (background job in flight) ─────────────────────────────── */}
+      {pendingMessage && (
+        <div className="flex items-center gap-2 bg-indigo-950/20 border border-indigo-500/20 rounded-xl p-4 text-xs font-mono text-indigo-300">
+          <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" /> {pendingMessage}
+        </div>
+      )}
+
       {/* ── Code Viewer ────────────────────────────────────────────────────── */}
       {latestSubmissionWithCode
         ? <CodeViewer code={latestSubmissionWithCode.code} language={latestSubmissionWithCode.language} />
@@ -240,7 +292,9 @@ export default function AnalysisPage() {
         <div className="space-y-4">
 
           {/* 1. Complexity — dynamic colors + explanation */}
-          <ComplexityCard data={analysis.complexityAnalysis} />
+          {analysis.complexityAnalysis && (
+            <ComplexityCard data={analysis.complexityAnalysis} />
+          )}
 
           {/* 2. Hints — accordion, collapsed by default */}
           {analysis.hints && analysis.hints.length > 0 && (
@@ -248,7 +302,7 @@ export default function AnalysisPage() {
           )}
 
           {/* 3. Optimization Areas — inline code + snippet blocks + severity icons */}
-          <OptimizationList items={analysis.optimizationAreas} />
+          <OptimizationList items={analysis.optimizationAreas ?? []} />
 
           {/* 4. Edge Cases */}
           {analysis.edgeCasesToConsider && analysis.edgeCasesToConsider.length > 0 && (
@@ -262,7 +316,7 @@ export default function AnalysisPage() {
               <h3 className="text-sm font-bold text-slate-100">Interview Questions</h3>
               <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Goldman Sachs / Google L4 level</span>
             </div>
-            {analysis.interviewerQuestions.map((qa, i) => (
+            {(analysis.interviewerQuestions ?? []).map((qa, i) => (
               <InterviewQACard key={i} index={i} question={qa.question} answer={qa.expectedAnswer} />
             ))}
           </div>

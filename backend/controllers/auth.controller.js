@@ -4,7 +4,6 @@ import generateToken from '../utils/generateToken.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import bcrypt from 'bcrypt';
 
 /**
  * @desc    Register a new user
@@ -12,7 +11,6 @@ import bcrypt from 'bcrypt';
  * @access  Public
  */
 export const registerUser = asyncHandler(async (req, res) => {
-  console.log('[REGISTER] Received request:', { body: req.body });
   
   const { name, email, password, targetDailySolved } = req.body;
 
@@ -169,7 +167,14 @@ export const forgotPassword = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     // 1. Get the token from the request body or URL params
-    const { token, newPassword } = req.body;
+    const { token, newPassword } = req.body ?? {};
+
+    if (typeof token !== 'string' || !token || typeof newPassword !== 'string') {
+      return res.status(400).json({ success: false, message: 'Reset token and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
 
     // 2. Hash the incoming token so we can compare it to the one in the database
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
@@ -184,9 +189,8 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
     }
 
-    // 4. Hash the new password and save it
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    // 4. Set the new password — the User pre('save') hook hashes it
+    user.password = newPassword;
 
     // 5. CRITICAL: Clear out the reset fields so the token can never be used again
     user.resetPasswordToken = undefined;

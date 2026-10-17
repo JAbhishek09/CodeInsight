@@ -128,7 +128,11 @@ export default function Navbar() {
         </div>
       </nav>
 
-      <Sidebar isOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      <Sidebar
+        isOpen={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        onImport={() => setImportOpen(true)}
+      />
       <ImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} />
     </>
   );

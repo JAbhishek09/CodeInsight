@@ -85,7 +85,7 @@ export default function ProfileInput({ initialLeetcode, initialCodeforces, onSyn
       onSyncComplete?.();
     } catch (e: any) {
       // Surface the server's validation error (e.g. unrecognised URL format)
-      setError(e.response?.data?.message || e.message || 'Sync failed');
+      setError(e?.message || 'Sync failed');
     } finally {
       setSyncing(false);
     }

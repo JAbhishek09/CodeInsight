@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Brain, LayoutDashboard, BookOpen, BarChart3, Sparkles, Settings, X, Download } from 'lucide-react';
-import ImportModal from './ImportModal';
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Opens the ImportModal owned by the parent (so it survives this drawer unmounting) */
+  onImport: () => void;
 }
 
 const NAV_LINKS = [
@@ -16,10 +16,9 @@ const NAV_LINKS = [
   { path: '/profile',   label: 'Settings',    Icon: Settings },
 ];
 
-export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+export default function Sidebar({ isOpen, onClose, onImport }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [importOpen, setImportOpen] = useState(false);
 
   const handleNav = (path: string) => {
     navigate(path);
@@ -72,7 +71,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         {/* Import button — prominently at the bottom of the mobile drawer */}
         <div className="p-4 border-t border-slate-950">
           <button
-            onClick={() => { onClose(); setImportOpen(true); }}
+            onClick={() => { onClose(); onImport(); }}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
@@ -80,9 +79,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           </button>
         </div>
       </aside>
-
-      {/* ImportModal — rendered outside the drawer so it survives onClose */}
-      <ImportModal isOpen={importOpen} onClose={() => setImportOpen(false)} />
     </>
   );
 }

@@ -42,7 +42,7 @@ export default function ResetPasswordPage() {
       // Give them 3 seconds to read the success message, then auto-redirect to login
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'This reset link has expired or is invalid. Please request a new one.');
+      setError(err.message || 'This reset link has expired or is invalid. Please request a new one.');
     } finally {
       setLoading(false);
     }

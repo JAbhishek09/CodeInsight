@@ -36,9 +36,14 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    const isImportEndpoint = error.config?.url?.includes('/import/');
+    const url: string = error.config?.url ?? '';
+    const isImportEndpoint = url.includes('/import/');
+    // Auth endpoints (login/register/reset) return 401 for bad credentials —
+    // let the caller show the error instead of reloading the page.
+    const isAuthEndpoint = url.includes('/auth/');
+    const alreadyOnLogin = window.location.pathname.startsWith('/login');
 
-    if (error.response?.status === 401 && !isImportEndpoint) {
+    if (error.response?.status === 401 && !isImportEndpoint && !isAuthEndpoint && !alreadyOnLogin) {
       localStorage.removeItem(TOKEN_KEY);
       window.location.href = '/login';
     }

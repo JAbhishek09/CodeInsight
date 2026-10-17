@@ -1,16 +1,16 @@
 import { TrendingUp, Zap, CheckCircle2 } from 'lucide-react';
 
 interface ComplexityCardProps {
-  data: {
-    current: string;
-    optimal: string;
+  data?: {
+    current?: string;
+    optimal?: string;
     explanation?: string;
-  };
+  } | null;
 }
 
 /** Normalise a complexity string so "O(n)" and "O(N)" compare equal */
 function normalise(s: string) {
-  return s.toLowerCase().replace(/\s+/g, '');
+  return (s ?? '').toLowerCase().replace(/\s+/g, '');
 }
 
 /** Render text that may contain `backtick` spans as inline <code> elements */
@@ -35,8 +35,13 @@ function InlineCode({ text }: { text: string }) {
 }
 
 export default function ComplexityCard({ data }: ComplexityCardProps) {
+  // Guard against partial / missing analysis payloads
+  if (!data) return null;
+  const current = data.current || '—';
+  const optimal = data.optimal || '—';
+
   // Dynamic colour: if current matches optimal → both boxes turn green
-  const isOptimal = normalise(data.current) === normalise(data.optimal);
+  const isOptimal = !!data.current && !!data.optimal && normalise(data.current) === normalise(data.optimal);
 
   const currentStyle = isOptimal
     ? 'bg-emerald-950/10 border-emerald-500/20'
@@ -63,7 +68,7 @@ export default function ComplexityCard({ data }: ComplexityCardProps) {
           <p className={`text-[10px] font-mono uppercase tracking-wider font-semibold ${currentLabel}`}>
             Your Submission
           </p>
-          <p className="text-sm font-bold text-slate-100 font-mono">{data.current}</p>
+          <p className="text-sm font-bold text-slate-100 font-mono">{current}</p>
         </div>
 
         {/* Optimal */}
@@ -72,7 +77,7 @@ export default function ComplexityCard({ data }: ComplexityCardProps) {
             <Zap className="w-3 h-3 text-emerald-400" />
             <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-wider font-semibold">Optimal</p>
           </div>
-          <p className="text-sm font-bold text-slate-100 font-mono">{data.optimal}</p>
+          <p className="text-sm font-bold text-slate-100 font-mono">{optimal}</p>
         </div>
       </div>
 

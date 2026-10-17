@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getProblems, deleteProblem, updateProblem } from '../api/problems.api';
 
 export interface Problem {
@@ -32,7 +32,19 @@ export function useProblems(filters: Filters = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Debounce the free-text search so we don't fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(filters.search ?? '');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(filters.search ?? ''), 300);
+    return () => clearTimeout(t);
+  }, [filters.search]);
+
+  // Monotonic request id — responses from superseded requests are ignored so a
+  // slow, stale response can't overwrite a newer one.
+  const requestIdRef = useRef(0);
+
   const fetchProblems = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -41,15 +53,17 @@ export function useProblems(filters: Filters = {}) {
       if (filters.difficulty) params.difficulty = filters.difficulty;
       if (filters.status) params.status = filters.status;
       if (filters.platform) params.platform = filters.platform;
-      if (filters.search) params.search = filters.search;
+      if (debouncedSearch) params.search = debouncedSearch;
       const res = await getProblems(params);
+      if (requestId !== requestIdRef.current) return;
       setProblems(res?.data || []);
     } catch (e: any) {
+      if (requestId !== requestIdRef.current) return;
       setError(e.message || 'Failed to load problems');
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [filters.difficulty, filters.status, filters.platform, filters.search]);
+  }, [filters.difficulty, filters.status, filters.platform, debouncedSearch]);
 
   useEffect(() => {
     fetchProblems();

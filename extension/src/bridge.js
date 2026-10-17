@@ -43,9 +43,89 @@
 (function () {
   'use strict';
 
-  var sentIds = {};
+  var sentIds  = {};
+  var inFlight = {};
 
-  console.log('[CodeInsight Bridge] v1.4.0 static bridge loaded:', location.href);
+  // Mirrors content.js — LeetCode judge status codes → backend verdicts.
+  var STATUS_CODE_MAP = {
+    10: 'Accepted',  11: 'Wrong Answer', 12: 'MLE', 13: 'MLE',
+    14: 'TLE',       15: 'RE',           16: 'RE',  20: 'CE',
+    21: 'RE',        30: 'TLE',
+  };
+
+  var SUBMISSION_DETAILS_QUERY =
+    'query submissionDetails($submissionId: Int!) {' +
+    '  submissionDetails(submissionId: $submissionId) {' +
+    '    timestamp statusCode code' +
+    '    lang { name }' +
+    '    question { titleSlug title }' +
+    '  }' +
+    '}';
+
+  console.log('[CodeInsight Bridge] v1.5.0 static bridge loaded:', location.href);
+
+  function getCookie(name) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function normaliseLanguage(raw){
+    var s=raw.toLowerCase().trim();
+    var M=[['c++','cpp'],['cpp','cpp'],['python3','python3'],['python','python3'],['javascript','javascript'],['typescript','typescript'],['java','java'],['c#','csharp'],['csharp','csharp'],['golang','golang'],['go','golang'],['rust','rust'],['kotlin','kotlin'],['swift','swift'],['scala','scala'],['ruby','ruby'],['php','php'],['dart','dart'],['elixir','elixir'],['erlang','erlang'],['racket','racket'],['bash','bash'],['mysql','mysql'],['mssql','mssql'],['postgresql','postgresql'],['c','c']];
+    for(var i=0;i<M.length;i++)if(s.indexOf(M[i][0])!==-1)return M[i][1];
+    return s;
+  }
+
+  /**
+   * SECURITY: the page (MAIN world) channel is untrusted — any script on
+   * leetcode.com can post { __ci: true, payload }. So we only take the
+   * submissionId from it and rebuild the whole payload from LeetCode's own
+   * GraphQL API (same-origin, using the user's session). A forged message can
+   * therefore at most re-sync one of the user's real submissions.
+   */
+  function fetchVerifiedPayload(submissionId) {
+    return fetch('https://leetcode.com/graphql/', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrftoken': getCookie('csrftoken'),
+      },
+      body: JSON.stringify({
+        operationName: 'submissionDetails',
+        query: SUBMISSION_DETAILS_QUERY,
+        variables: { submissionId: Number(submissionId) },
+      }),
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('LeetCode GraphQL HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function (json) {
+        var sd = json && json.data && json.data.submissionDetails;
+        if (!sd) throw new Error('submissionDetails unavailable');
+
+        var verdict = STATUS_CODE_MAP[sd.statusCode];
+        var slug    = sd.question && sd.question.titleSlug;
+        var lang    = sd.lang && sd.lang.name;
+        if (!verdict) throw new Error('unsettled or unknown statusCode ' + sd.statusCode);
+        if (!slug)    throw new Error('missing question.titleSlug');
+        if (!lang)    throw new Error('missing lang.name');
+        if (typeof sd.code !== 'string' || sd.code.trim().length < 5) throw new Error('missing code');
+
+        return {
+          problemSlug:  slug,
+          submissionId: String(submissionId),
+          title:        (sd.question.title || slug).slice(0, 200),
+          verdict:      verdict,
+          language:     normaliseLanguage(lang),
+          code:         sd.code,
+          submittedAt:  sd.timestamp
+                          ? new Date(Number(sd.timestamp) * 1000).toISOString()
+                          : new Date().toISOString(),
+        };
+      });
+  }
 
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
@@ -53,22 +133,14 @@
     var data = event.data;
     if (!data || data.__ci !== true) return;
 
-    var payload = data.payload;
-
-    if (
-      !payload ||
-      typeof payload.problemSlug  !== 'string' || !payload.problemSlug ||
-      typeof payload.submissionId !== 'string' || !payload.submissionId ||
-      typeof payload.code         !== 'string' || payload.code.trim().length < 5 ||
-      typeof payload.verdict      !== 'string' || !payload.verdict ||
-      typeof payload.language     !== 'string' || !payload.language
-    ) {
-      console.warn('[CodeInsight Bridge] Invalid payload shape, dropping.', payload);
+    var submissionId = data.payload && data.payload.submissionId;
+    if (typeof submissionId !== 'string' || !/^\d{1,20}$/.test(submissionId)) {
+      console.warn('[CodeInsight Bridge] Invalid submissionId, dropping.', submissionId);
       return;
     }
 
-    if (sentIds[payload.submissionId]) {
-      console.debug('[CodeInsight Bridge] Already sent subId:', payload.submissionId);
+    if (sentIds[submissionId] || inFlight[submissionId]) {
+      console.debug('[CodeInsight Bridge] Already sent subId:', submissionId);
       return;
     }
 
@@ -78,14 +150,25 @@
     if (!chrome || !chrome.runtime || !chrome.runtime.id) {
       console.error(
         '[CodeInsight Bridge] Extension context invalidated — cannot forward subId',
-        payload.submissionId,
+        submissionId,
         '. This page needs a reload to restore the connection.'
       );
       return;
     }
 
-    sentIds[payload.submissionId] = true;
+    inFlight[submissionId] = true;
+    fetchVerifiedPayload(submissionId)
+      .then(function (payload) {
+        sentIds[submissionId] = true;
+        forward(payload);
+      })
+      .catch(function (err) {
+        console.warn('[CodeInsight Bridge] Could not verify subId', submissionId, '—', err.message);
+      })
+      .then(function () { delete inFlight[submissionId]; });
+  });
 
+  function forward(payload) {
     console.log('[CodeInsight Bridge] Forwarding →',
       payload.verdict, '|', payload.language,
       '|', payload.code.length, 'chars',
@@ -119,6 +202,6 @@
       // was invalidated between the check above and this call (rare race).
       console.error('[CodeInsight Bridge] Exception calling sendMessage:', err.message);
     }
-  });
+  }
 
 })();

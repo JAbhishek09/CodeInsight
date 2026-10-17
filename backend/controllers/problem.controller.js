@@ -1,6 +1,15 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 
+// Fields a user may edit via PUT /api/problems/:id. Ownership, submissions and
+// AI analysis state are server-managed and must never come from the request body.
+const EDITABLE_FIELDS = [
+  'title', 'url', 'difficulty', 'tags', 'status', 'category',
+  'notes', 'timeComplexity', 'spaceComplexity',
+];
+
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 /**
  * @desc    Create a manual problem entry
  * @route   POST /api/problems
@@ -42,8 +51,8 @@ export const getProblems = asyncHandler(async (req, res) => {
   if (difficulty) query.difficulty = difficulty;
   if (status) query.status = status;
   if (platform) query.platform = platform;
-  if (category) query.category = { $regex: category, $options: 'i' };
-  if (search) query.title = { $regex: search, $options: 'i' };
+  if (category) query.category = { $regex: escapeRegex(category), $options: 'i' };
+  if (search) query.title = { $regex: escapeRegex(search), $options: 'i' };
 
   const problems = await Problem.find(query).sort({ updatedAt: -1 });
 
@@ -93,7 +102,12 @@ export const updateProblem = asyncHandler(async (req, res) => {
     throw new Error('Not authorized to modify this problem');
   }
 
-  problem = await Problem.findByIdAndUpdate(req.params.id, req.body, {
+  const updates = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (req.body?.[field] !== undefined) updates[field] = req.body[field];
+  }
+
+  problem = await Problem.findByIdAndUpdate(req.params.id, { $set: updates }, {
     new: true,
     runValidators: true,
   });

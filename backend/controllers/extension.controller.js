@@ -201,6 +201,8 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
           aiAnalysis: null,
           aiAnalysisStatus: 'pending',  // BUG-AI-001: signals background job is in flight
           aiAnalysisError: null,
+          aiAnalysisPendingHash: incomingHash,
+          aiAnalysisPendingSince: new Date(),
         },
       });
       aiInvalidated = true;
@@ -239,10 +241,10 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
  * Run AI analysis in the background and persist result to MongoDB.
  * Called after the HTTP response has already been sent.
  *
- * BUG-INJ-004 FIX: The write is guarded by a codeSnapshotHash mismatch filter.
- * If two background jobs race (e.g. user submits twice rapidly), only the job
- * whose hash matches the latest ingested code will successfully write.  The
- * slower job for an older code snapshot will hit the $or filter and be a no-op.
+ * BUG-INJ-004 FIX: The write is guarded by aiAnalysisPendingHash. Each new
+ * ingest sets it to the hash of the code being analysed, so if two background
+ * jobs race (e.g. user submits twice rapidly), only the job for the latest
+ * code matches the filter. A slower job for older code is a no-op.
  *
  * BUG-AI-001 FIX: Sets aiAnalysisStatus to 'ready' on success, 'error' on
  * failure, so the analysis endpoint can check status before firing a second
@@ -260,19 +262,9 @@ async function runBackgroundAnalysis(problemId, userId, code, codeHash, problemT
       language,
     });
 
-    // BUG-INJ-004: Only write if the codeSnapshotHash in the DB is still the one
-    // we were asked to analyse (or if no analysis exists yet).  This prevents a
-    // slow job for older code from overwriting a faster job for newer code.
-    await Problem.findOneAndUpdate(
-      {
-        _id: problemId,
-        user: userId,
-        $or: [
-          { 'aiAnalysis.codeSnapshotHash': { $ne: hash } },
-          { 'aiAnalysis.codeSnapshotHash': { $exists: false } },
-          { aiAnalysis: null },
-        ],
-      },
+    // BUG-INJ-004: Only write if this job is still the latest one requested.
+    const written = await Problem.findOneAndUpdate(
+      { _id: problemId, user: userId, aiAnalysisPendingHash: codeHash },
       {
         $set: {
           aiAnalysis: {
@@ -282,18 +274,26 @@ async function runBackgroundAnalysis(problemId, userId, code, codeHash, problemT
           },
           aiAnalysisStatus: 'ready',   // BUG-AI-001
           aiAnalysisError: null,
+          aiAnalysisPendingHash: null,
+          aiAnalysisPendingSince: null,
         },
       }
     );
 
+    if (!written) {
+      console.log(`[Extension] Background AI analysis for problem ${problemId} superseded by newer code — discarded`);
+      return;
+    }
     console.log(`[Extension] Background AI analysis completed for problem ${problemId}`);
   } catch (err) {
     console.error(`[Extension] Background AI analysis failed for problem ${problemId}:`, err.message);
     // Mark as error so the frontend can surface a "retry" option (BUG-AI-001)
-    await Problem.findByIdAndUpdate(problemId, {
+    await Problem.findOneAndUpdate({ _id: problemId, aiAnalysisPendingHash: codeHash }, {
       $set: {
         aiAnalysisStatus: 'error',
         aiAnalysisError: err.message,
+        aiAnalysisPendingHash: null,
+        aiAnalysisPendingSince: null,
       },
     }).catch(e => console.error('[Extension] Could not persist AI error status:', e.message));
   }
