@@ -33,7 +33,7 @@ export default function HistoryImport({
   const [enrichmentWarning, setEnrichmentWarning] = useState<string | null>(null);
 
   // Phase 1B progress (global submission list)
-  const [phase, setPhase] = useState<'idle' | '1b' | '1c'>('idle');
+  const [phase, setPhase] = useState<'idle' | '1a' | '1b' | '1c'>('idle');
   const [currentOffset, setCurrentOffset] = useState(0);
   const [totalFetched, setTotalFetched] = useState(0);
   const [totalAttached, setTotalAttached] = useState(0);
@@ -66,6 +66,9 @@ export default function HistoryImport({
     acceptedSubmissions: number;
     acceptedWithCode: number;
     missingCode: number;
+    solvedProblems?: number;
+    solvedWithCode?: number;
+    missingCodeProblems?: number;
   } | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(true);
 
@@ -190,12 +193,10 @@ export default function HistoryImport({
           `Only your most recent ${fetched} submissions were scanned.`
         );
       }
-      // KEY FIX: slower base delay (1500ms instead of 500ms) plus randomized
-      // jitter (±40%) so the request cadence doesn't look like a uniform
-      // bot loop to LeetCode's WAF. At ~15 pages for 300 submissions this
-      // adds roughly 15-25s total, which is a worthwhile trade against the
-      // import dying partway through and reporting a false "session expired".
-      const baseDelay = 1500;
+      // Randomized jitter (±40%) so the request cadence doesn't look like a
+      // uniform bot loop to LeetCode's WAF. Pages are metadata-only now (code
+      // is fetched per problem in Pass 2), so a shorter base delay is fine.
+      const baseDelay = 800;
       const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1); // ±40%
       await new Promise(r => setTimeout(r, baseDelay + jitter));
     }
@@ -210,11 +211,23 @@ export default function HistoryImport({
     setBackfillSkipped(0);
     setBackfillProcessed(0);
 
-    let skip = 0;
+    let cursor: string | null = null;
     let totalFilled = 0, totalSkipped = 0, totalProcessed = 0;
+    let failures = 0;
 
     while (!abortRef.current) {
-      const data = await backfillLeetcodeCode(session, skip, 20);
+      let data;
+      try {
+        data = await backfillLeetcodeCode(session, cursor);
+        failures = 0;
+      } catch (err: any) {
+        // A single failed batch (timeout, LeetCode hiccup, rate limit) shouldn't
+        // kill the whole import — back off and retry the same batch.
+        failures += 1;
+        if (failures > 3) throw err;
+        await new Promise(r => setTimeout(r, 5000 * failures));
+        continue;
+      }
 
       if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
 
@@ -222,16 +235,15 @@ export default function HistoryImport({
       totalSkipped   += data.skipped   ?? 0;
       totalProcessed += data.processed ?? 0;
 
-      setBackfillTotal(data.total ?? 0);
+      setBackfillTotal(totalProcessed + (data.remaining ?? 0));
       setBackfillFilled(totalFilled);
       setBackfillSkipped(totalSkipped);
       setBackfillProcessed(totalProcessed);
 
-      if (!data.hasMore) break;
-      skip = data.nextSkip ?? skip + 20;
+      if (!data.hasMore || !data.nextCursor) break;
+      cursor = data.nextCursor;
 
-      // Slightly longer pause in 1C — each iteration makes 2× LC requests per problem
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 300));
     }
   };
 
@@ -259,11 +271,18 @@ export default function HistoryImport({
     const session = sessionCookie.trim();
 
     try {
-      // Phase 1B — global submission list (fast, covers recent ~1080 submissions)
-      await runPhase1B(session);
+      // Refresh the full solved-problem list with the session first, so every
+      // solved problem exists (and is marked Solved) before we look for code.
+      // Without a session Step 1 only sees the 20 most recent ACs.
+      setPhase('1a');
+      await importLeetcodeProblems(session);
 
-      // Phase 1C — per-problem fetch for any problems still with empty submissions
-      // (covers all historically old problems that 1B's global window missed)
+      // Phase 1B — full submission history (IDs, verdicts, timestamps)
+      if (!abortRef.current) {
+        await runPhase1B(session);
+      }
+
+      // Phase 1C — code for the latest AC of every solved problem still missing it
       if (!abortRef.current) {
         await runPhase1C(session);
       }
@@ -312,9 +331,11 @@ export default function HistoryImport({
   // Prefer the live, ground-truth coverage status. Fall back to the static
   // historyImportStatus prop only while coverage is still loading.
   const effectiveStatus = coverageLoading ? historyImportStatus : (coverage?.status ?? historyImportStatus);
-  const coverageDetail = coverage && coverage.acceptedSubmissions > 0
-    ? `${coverage.acceptedWithCode}/${coverage.acceptedSubmissions} submissions have code`
-    : null;
+  const coverageDetail = coverage && (coverage.solvedProblems ?? 0) > 0
+    ? `${coverage.solvedWithCode}/${coverage.solvedProblems} solved problems have code`
+    : coverage && coverage.acceptedSubmissions > 0
+      ? `${coverage.acceptedWithCode}/${coverage.acceptedSubmissions} submissions have code`
+      : null;
 
   return (
     <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-6">
@@ -403,9 +424,9 @@ export default function HistoryImport({
         <div className="flex-1 space-y-3">
           <p className="text-xs font-semibold text-slate-200">Import Submission Code <span className="text-slate-600 font-normal">(optional)</span></p>
           <p className="text-[11px] text-slate-500 leading-relaxed">
-            Fetches source code for all your submissions — required for AI analysis.
-            Runs two passes: a fast global scan then a per-problem pass for older history.
-            May take 3–8 minutes for large histories.
+            Fetches the source code of your latest accepted solution for every solved
+            problem — required for AI analysis. Also refreshes your full problem list
+            and submission history. Usually takes a few minutes for large histories.
           </p>
 
           <details className="text-[11px] text-slate-500 cursor-pointer">
@@ -467,9 +488,12 @@ export default function HistoryImport({
               {/* Phase 1B */}
               <div>
                 <div className="flex items-center gap-2 text-[11px] font-mono mb-1.5">
-                  {phase === '1b' ? (
+                  {phase === '1a' ? (
                     <><Loader2 className="w-3 h-3 animate-spin text-purple-400" />
-                    <span className="text-purple-400">Pass 1 — recent history (page {currentOffset + 1})</span></>
+                    <span className="text-purple-400">Refreshing solved problem list…</span></>
+                  ) : phase === '1b' ? (
+                    <><Loader2 className="w-3 h-3 animate-spin text-purple-400" />
+                    <span className="text-purple-400">Pass 1 — submission history (page {currentOffset + 1})</span></>
                   ) : (
                     <><CheckCircle2 className="w-3 h-3 text-emerald-400" />
                     <span className="text-emerald-400">Pass 1 — complete ({pagesProcessed} pages)</span></>
@@ -497,7 +521,7 @@ export default function HistoryImport({
                   <div className="flex items-center gap-2 text-[11px] font-mono mb-1.5">
                     {phase === '1c' ? (
                       <><Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
-                      <span className="text-indigo-400">Pass 2 — older history ({backfillProcessed}/{backfillTotal} problems)</span></>
+                      <span className="text-indigo-400">Pass 2 — fetching code ({backfillProcessed}/{backfillTotal} problems)</span></>
                     ) : (
                       <><CheckCircle2 className="w-3 h-3 text-emerald-400" />
                       <span className="text-emerald-400">Pass 2 — complete</span></>
@@ -514,7 +538,7 @@ export default function HistoryImport({
                     </div>
                     <div>
                       <div className="text-sm font-bold text-slate-500">{backfillSkipped}</div>
-                      <div className="text-[10px] text-slate-500">no AC</div>
+                      <div className="text-[10px] text-slate-500">unavailable</div>
                     </div>
                   </div>
                   {backfillTotal > 0 && (
@@ -537,8 +561,8 @@ export default function HistoryImport({
             <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
               <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                Import complete — {pagesProcessed} pages (recent) + {backfillProcessed} problems (older history).{' '}
-                {totalAttached + backfillFilled} submissions now have code.
+                Import complete — {totalFetched} submissions scanned, {backfillFilled} problems got code
+                {backfillSkipped > 0 ? ` (${backfillSkipped} unavailable from LeetCode)` : ''}.
               </span>
             </div>
           )}

@@ -16,13 +16,12 @@
  *
  * THE REAL SOURCE OF CODE: submissionDetails GraphQL query. This is the only
  * LeetCode API that reliably returns source code for any submission by ID
- * regardless of age. We now call it inline during Phase 1B enrichment, and
- * Phase 1C uses it directly via the exported fetchSubmissionCodeById.
+ * regardless of age. Phase 1C (backfill) calls it through
+ * the exported fetchSubmissionCodeById.
  *
  * STRATEGY:
- *  Phase 1B — REST pagination for metadata (IDs, verdicts, timestamps).
- *              For every AC submission without code on the page, call
- *              submissionDetails GraphQL to enrich it before returning.
+ *  Phase 1B — REST pagination for metadata (IDs, verdicts, timestamps), plus
+ *              code only where REST still returns it (recent submissions).
  *  Phase 1C — If a problem already has a submissionId in MongoDB (put there
  *              by Phase 1B), call fetchSubmissionCodeById directly (1 request).
  *              Otherwise fall back to fetchBestAcSubmissionForProblem which
@@ -135,7 +134,7 @@ async function lcGraphQL(query, variables, sessionCookie = null) {
     res = await axios.post(
       LC_GRAPHQL,
       { query, variables },
-      { headers: makeHeaders(sessionCookie), timeout: 30000 }
+      { headers: makeHeaders(sessionCookie), timeout: 15000 }
     );
   } catch (err) {
     if (err.response?.status === 403) throw new Error('LeetCode returned 403 — IP may be rate-limited. Try again in a few minutes.');
@@ -266,11 +265,11 @@ async function fetchRecentAcSubmissions(handle) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. SUBMISSION HISTORY WITH CODE — REST + submissionDetails enrichment (Phase 1B)
+// 3. SUBMISSION HISTORY WITH CODE — REST metadata (Phase 1B)
 //
-// KEY FIX: REST /api/submissions/ returns code:"" for submissions >~30 days old.
-// We call submissionDetails GraphQL for every AC submission on the page that
-// has no code, enriching inline before returning to the controller.
+// REST /api/submissions/ returns code:"" for submissions >~30 days old. That is
+// fine here: this pass only collects IDs/verdicts; Phase 1C fetches missing
+// code per problem via submissionDetails.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSubmissionHistoryREST(sessionCookie, offset = 0, limit = 20) {
@@ -341,23 +340,13 @@ export async function fetchSubmissionHistoryREST(sessionCookie, offset = 0, limi
     memory:            s.memory     ?? '',
   }));
 
-  // KEY FIX: enrich AC submissions that have no code via submissionDetails
-  const acWithoutCode = submissions.filter(s => s.verdict === 'Accepted' && !s.code);
-  if (acWithoutCode.length > 0) {
-    console.log(`[LC REST] offset ${offset}: ${acWithoutCode.length}/${submissions.length} AC subs need submissionDetails enrichment`);
-    for (const sub of acWithoutCode) {
-      try {
-        const code = await fetchSubmissionCode(sub.submissionId, clean);
-        if (code && code.trim().length > 0) sub.code = code.trim();
-        await new Promise(r => setTimeout(r, 300)); // avoid rate limiting
-      } catch (err) {
-        console.warn(`[LC] submissionDetails failed for sub ${sub.submissionId}: ${err.message}`);
-      }
-    }
-  }
+  // NOTE: no per-submission submissionDetails enrichment here any more. Doing
+  // it for every AC submission on every page (sequentially, with delays) was
+  // what made the import take forever. Pass 2 (backfill) now fetches code for
+  // just the latest AC submission of each solved problem that still lacks it.
 
   const withCode = submissions.filter(s => s.code && s.code.trim().length > 0);
-  console.log(`[LC REST] offset ${offset}: ${submissions.length} subs, ${withCode.length} with code after enrichment, hasNext=${hasNext}`);
+  console.log(`[LC REST] offset ${offset}: ${submissions.length} subs, ${withCode.length} with code, hasNext=${hasNext}`);
 
   return { submissions, hasNext, nextOffset: offset + submissions.length };
 }
@@ -390,7 +379,7 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
     const url = `${LC_BASE}/api/submissions/${encodeURIComponent(titleSlug)}/`;
     const res = await axios.get(url, {
       headers: makeRestHeaders(clean),
-      timeout: 20000,
+      timeout: 15000,
       decompress: true,
     });
 

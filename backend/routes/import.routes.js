@@ -3,7 +3,7 @@
  *
  * POST /api/import/leetcode/problems       — full AC problem list (session optional but recommended)
  * POST /api/import/leetcode/code           — paginated submission code (session required)
- * POST /api/import/leetcode/backfill       — per-problem backfill for problems still missing code
+ * POST /api/import/leetcode/backfill       — code for each solved problem still missing it (cursor-paged)
  * GET  /api/import/leetcode/code-status    — live code coverage stats
  * POST /api/import/leetcode/repair-difficulty — ONE-TIME repair: re-fetch real difficulty for
  *                                              all problems currently stored as 'Medium' that
@@ -28,13 +28,14 @@ const problemsImportLimiter = rateLimit({
   keyGenerator: (req) => req.user?._id?.toString() ?? 'anonymous',
   message: { success: false, message: 'Too many import requests. Please wait 10 minutes.' },
 });
+// Pass 1 is one request per 20 submissions — large histories need hundreds.
 const codeImportLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, max: 120,
+  windowMs: 10 * 60 * 1000, max: 500,
   keyGenerator: (req) => req.user?._id?.toString() ?? 'anonymous',
   message: { success: false, message: 'Too many code import requests. Please wait 10 minutes.' },
 });
 const backfillLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, max: 120,
+  windowMs: 10 * 60 * 1000, max: 300,
   keyGenerator: (req) => req.user?._id?.toString() ?? 'anonymous',
   message: { success: false, message: 'Too many backfill requests. Please wait 10 minutes.' },
 });

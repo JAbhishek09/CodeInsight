@@ -18,9 +18,9 @@ api.interceptors.request.use(
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) config.headers.Authorization = `Bearer ${token}`;
 
-    // Import endpoints can take up to ~120s (10 pages × 1s delay + network)
+    // Import endpoints call LeetCode several times per request — allow up to 3 min
     if (config.url?.includes('/import/')) {
-      config.timeout = 120000;
+      config.timeout = 180000;
     }
 
     return config;
