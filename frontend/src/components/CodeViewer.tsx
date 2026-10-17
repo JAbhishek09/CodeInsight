@@ -1,22 +1,11 @@
 import { Code2 } from 'lucide-react';
+import { languageLabel } from '../lib/languages';
 
 interface CodeViewerProps {
   code: string;
   language: string;
 }
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  cpp: 'C++',
-  c: 'C',
-  java: 'Java',
-  python3: 'Python 3',
-  python: 'Python',
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
-  golang: 'Go',
-  rust: 'Rust',
-  kotlin: 'Kotlin',
-};
 
 export default function CodeViewer({ code, language }: CodeViewerProps) {
   if (!code || code.trim().length === 0) {
@@ -40,7 +29,7 @@ export default function CodeViewer({ code, language }: CodeViewerProps) {
         <div className="flex items-center gap-2">
           <Code2 className="w-4 h-4 text-pink-400" />
           <span className="text-xs font-mono text-slate-300">
-            {LANGUAGE_LABELS[language] || language}
+            {languageLabel(language)}
           </span>
         </div>
         <div className="flex gap-1.5">

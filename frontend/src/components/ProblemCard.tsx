@@ -21,24 +21,9 @@ import {
   Code2,
 } from 'lucide-react';
 
-export interface Problem {
-  _id: string;
-  title: string;
-  url?: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Div1' | 'Div2' | 'Div3' | 'unrated';
-  status: 'Solved' | 'Attempted' | 'To Do';
-  category: string;
-  notes?: string;
-  timeComplexity?: string;
-  spaceComplexity?: string;
-  platform?: string;
-  submissions?: any[];
-  tags?: string[];
-  aiAnalysis?: any;
-  aiAnalysisStatus?: 'idle' | 'pending' | 'ready' | 'error';
-  createdAt?: string;
-  updatedAt?: string;
-}
+import type { Problem, ProblemStatus } from '../types/problem';
+
+export type { Problem };
 
 interface ProblemCardProps {
   problem: Problem;

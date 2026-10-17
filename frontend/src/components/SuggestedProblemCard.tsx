@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { Sparkles, ArrowRight, PartyPopper } from 'lucide-react';
-import { Problem } from './ProblemCard';
+import type { Problem } from '../types/problem';
 
 interface SuggestedProblemCardProps {
   problem: Problem | null;

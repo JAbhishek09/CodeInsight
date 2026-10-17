@@ -1,24 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getProblems, deleteProblem, updateProblem } from '../api/problems.api';
 
-export interface Problem {
-  _id: string;
-  title: string;
-  url?: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Div1' | 'Div2' | 'Div3' | 'unrated';
-  status: 'Solved' | 'Attempted' | 'To Do';
-  category: string;
-  notes?: string;
-  timeComplexity?: string;
-  spaceComplexity?: string;
-  platform: 'leetcode' | 'codeforces' | 'manual';
-  createdAt?: string;
-  updatedAt?: string;
-  submissions?: any[];
-  tags?: string[];
-  aiAnalysis?: any;
-  aiAnalysisStatus?: 'idle' | 'pending' | 'ready' | 'error';
-}
+import type { Problem, ProblemStatus } from '../types/problem';
+
+export type { Problem };
 
 interface Filters {
   difficulty?: string;

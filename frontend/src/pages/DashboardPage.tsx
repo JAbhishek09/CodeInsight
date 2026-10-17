@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { getProblems } from '../api/problems.api';
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import StatCard from '../components/StatCard';
 import DifficultyPieChart from '../components/DifficultyPieChart';
 import TopicMasteryBars from '../components/TopicMasteryBars';

@@ -1,4 +1,5 @@
 import { AlertTriangle, Lightbulb } from 'lucide-react';
+import InlineCode from './InlineCode';
 
 // Each item is either the old string shape (legacy cache) or the new object shape
 type OptimizationItem =
@@ -9,26 +10,6 @@ interface OptimizationListProps {
   items: OptimizationItem[];
 }
 
-/** Render backtick-wrapped tokens as styled inline <code> */
-function InlineCode({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith('`') && part.endsWith('`') ? (
-          <code
-            key={i}
-            className="px-1 py-0.5 rounded bg-slate-800 text-pink-300 font-mono text-[11px]"
-          >
-            {part.slice(1, -1)}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
-  );
-}
 
 /** Heuristic: if the description contains words like "minor", "consider", "style" → info icon */
 function isMinor(text: string) {

@@ -1,4 +1,5 @@
 import { TrendingUp, Zap, CheckCircle2 } from 'lucide-react';
+import InlineCode from './InlineCode';
 
 interface ComplexityCardProps {
   data?: {
@@ -13,26 +14,6 @@ function normalise(s: string) {
   return (s ?? '').toLowerCase().replace(/\s+/g, '');
 }
 
-/** Render text that may contain `backtick` spans as inline <code> elements */
-function InlineCode({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith('`') && part.endsWith('`') ? (
-          <code
-            key={i}
-            className="px-1 py-0.5 rounded bg-slate-800 text-pink-300 font-mono text-[11px]"
-          >
-            {part.slice(1, -1)}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
-  );
-}
 
 export default function ComplexityCard({ data }: ComplexityCardProps) {
   // Guard against partial / missing analysis payloads

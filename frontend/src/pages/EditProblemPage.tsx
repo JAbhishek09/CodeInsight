@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { updateProblem } from '../api/problems.api';
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import { Loader2, Save } from 'lucide-react';
 
 interface EditProblemFormProps {

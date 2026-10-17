@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getProblems } from '../api/problems.api';
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import { useAnalytics } from '../hooks/useAnalytics';
 import StatCard from '../components/StatCard';
 import TrendChart from '../components/TrendChart';

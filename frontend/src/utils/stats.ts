@@ -15,7 +15,8 @@
  *    with a meaningless fallback.
  */
 
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
+import { languageLabel } from '../lib/languages';
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -249,24 +250,11 @@ export function computeRecentActivity(entries: ActivityEntry[], limit = 6): Acti
 
 // ─── Language usage ───────────────────────────────────────────────────────────
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  cpp:        'C++',
-  c:          'C',
-  java:       'Java',
-  python3:    'Python 3',
-  python:     'Python',
-  javascript: 'JavaScript',
-  typescript: 'TypeScript',
-  golang:     'Go',
-  rust:       'Rust',
-  kotlin:     'Kotlin',
-};
-
 export function computeLanguageUsage(entries: ActivityEntry[]): { topic: string; count: number }[] {
   const map = new Map<string, number>();
   entries.forEach((e) => {
     if (!e.language) return;
-    const label = LANGUAGE_LABELS[e.language] || e.language;
+    const label = languageLabel(e.language);
     map.set(label, (map.get(label) || 0) + 1);
   });
   return Array.from(map.entries())

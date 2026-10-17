@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Plus, BookOpen, Loader2, FolderSearch } from 'lucide-react';
 import { useProblems } from '../hooks/useProblems';
-import { ProblemCard, Problem } from '../components/ProblemCard';
+import { ProblemCard } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import ProblemFilters from '../components/ProblemFilters';
 import EmptyState from '../components/EmptyState';
 import { Modal } from '../components/Modal';

@@ -8,6 +8,7 @@ import InterviewQACard from '../components/InterviewQACard';
 import CodeViewer from '../components/CodeViewer';
 import VerdictBadge from '../components/VerdictBadge';
 import { Brain, ArrowLeft, Loader2, Zap, ExternalLink, Lightbulb, ShieldAlert, ChevronDown } from 'lucide-react';
+import InlineCode from '../components/InlineCode';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface OptimizationItem {
@@ -25,23 +26,6 @@ interface AIAnalysis {
   generatedAt?: string;
 }
 
-// ── Inline code renderer (backticks → <code>) ─────────────────────────────────
-function InlineCode({ text }: { text: string }) {
-  const parts = text.split(/(`[^`]+`)/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        part.startsWith('`') && part.endsWith('`') ? (
-          <code key={i} className="px-1 py-0.5 rounded bg-slate-800 text-pink-300 font-mono text-[11px]">
-            {part.slice(1, -1)}
-          </code>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </>
-  );
-}
 
 // ── Hints accordion — collapsed so user thinks before reading ─────────────────
 function HintsSection({ hints }: { hints: string[] }) {

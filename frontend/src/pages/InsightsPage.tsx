@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getProblems } from '../api/problems.api';
-import { Problem } from '../components/ProblemCard';
+import type { Problem } from '../types/problem';
 import TopicMasteryBars from '../components/TopicMasteryBars';
 import EmptyState from '../components/EmptyState';
 import { computeTopicMastery, computeAIInsights, computeBlindSpots, computeTimeToOptimal } from '../utils/stats';
