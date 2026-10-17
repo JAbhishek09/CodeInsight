@@ -1,303 +1,210 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import DifficultyBadge from '../components/DifficultyBadge';
-import { difficultyStyle } from '../lib/difficulty';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Plus, RefreshCw, Sparkles } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { useAllProblems } from '../hooks/useProblems';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { useProblemListView } from '../hooks/useProblems';
 import QueryError from '../components/QueryError';
-import type { Problem } from '../types/problem';
-
-const NO_PROBLEMS: Problem[] = [];
-import StatCard from '../components/StatCard';
-import DifficultyPieChart from '../components/DifficultyPieChart';
-import TopicMasteryBars from '../components/TopicMasteryBars';
 import Heatmap from '../components/Heatmap';
-import RecentActivityFeed from '../components/RecentActivityFeed';
-import AIInsightsPanel from '../components/AIInsightsPanel';
-import SuggestedProblemCard from '../components/SuggestedProblemCard';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-  flattenSubmissions,
-  computeAcceptanceRate,
-  computeStreak,
-  countAIAnalyses,
-  computeHeatmapData,
-  computeTopicMastery,
-  computeDifficultyBreakdown,
-  computeRecentActivity,
-  computeAIInsights,
-  suggestNextProblem,
-} from '../utils/stats';
-import {
-  CheckCircle2,
-  Flame,
-  Brain,
-  RefreshCw,
-  Plus,
-  Activity,
-  Layers,
-  Award,
-  Gauge,
-  Percent,
-  ChevronRight,
-  Clock,
-} from 'lucide-react';
+  DifficultyProgress, Meter, MonthlySolvedChart, Panel, PanelLink, RecentProblems, StatTile, TopicList,
+} from '@/components/dashboard/widgets';
+import { cn } from '@/lib/utils';
 
 interface DashboardPageProps {
   onNavigate: (path: string) => void;
   onOpenNewProblem: () => void;
 }
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpenNewProblem }) => {
-  const { user, refreshUser } = useAuth();
-  const problemsQuery = useAllProblems();
-  const problems = problemsQuery.data ?? NO_PROBLEMS;
-  const loading = problemsQuery.isPending;
-  const refreshing = problemsQuery.isFetching;
-  const fetchDashboardData = () => { problemsQuery.refetch(); };
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
 
-  useEffect(() => {
-    refreshUser();
-  }, [refreshUser]);
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
-  // ── Derived analytics (client-side — see utils/stats.ts) ─────────────────
-  const entries = useMemo(() => flattenSubmissions(problems), [problems]);
-  const solvedCount = useMemo(() => problems.filter((p) => p.status === 'Solved').length, [problems]);
-  const acceptanceRate = useMemo(() => computeAcceptanceRate(entries), [entries]);
-  const streak = useMemo(() => computeStreak(entries), [entries]);
-  const aiAnalysesCount = useMemo(() => countAIAnalyses(problems), [problems]);
-  const heatmapData = useMemo(() => computeHeatmapData(entries), [entries]);
-  const topicMastery = useMemo(() => computeTopicMastery(problems), [problems]);
-  const difficultyBreakdown = useMemo(() => computeDifficultyBreakdown(problems), [problems]);
-  const recentActivity = useMemo(() => computeRecentActivity(entries, 6), [entries]);
-  const aiInsights = useMemo(() => computeAIInsights(problems, topicMastery), [problems, topicMastery]);
-  const suggested = useMemo(() => suggestNextProblem(problems), [problems]);
-
-  // Fallback for accounts with manual-only problems that have no embedded
-  // submissions yet — fall back to "recently updated problems" instead of
-  // an empty activity feed.
-  const recentProblemsFallback = useMemo(
-    () =>
-      [...problems]
-        .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
-        .slice(0, 5),
-    [problems]
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6" aria-busy="true" aria-label="Loading dashboard">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28" />)}
+      </div>
+      <Skeleton className="h-44" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Skeleton className="h-72 lg:col-span-2" />
+        <Skeleton className="h-72" />
+      </div>
+    </div>
   );
+}
 
-  const targetGoal = user?.targetDailySolved || 1;
-  const goalPct = Math.min(100, Math.round((solvedCount / targetGoal) * 100));
+/**
+ * Dashboard — everything comes from GET /api/analytics/summary (computed on
+ * the server, each problem counted once on its first accepted day) plus a
+ * small page of the lightweight problem list for recent activity.
+ */
+export const DashboardPage: React.FC<DashboardPageProps> = ({ onOpenNewProblem }) => {
+  const { user } = useAuth();
+  const summary = useAnalytics('all');
+  const recent = useProblemListView({ sort: '-lastSubmittedAt', limit: 6 });
+  const [heatmapMode, setHeatmapMode] = useState<'solved' | 'submissions'>('solved');
+
+  const s = summary.data;
+  const refreshing = summary.fetching || recent.isFetching;
+  const refresh = () => { summary.refetch(); recent.refetch(); };
+
+  const recentItems = recent.data?.data ?? [];
+  const toReview = recentItems.find((p) => p.hasCode && (!p.hasAiAnalysis || p.aiIsStale));
+
+  const heatmapData = Object.fromEntries(
+    (heatmapMode === 'solved' ? s?.solvedByDay : s?.submissionsByDay)?.map((d) => [d.date, d.count]) ?? []
+  );
 
   return (
     <div className="space-y-6" id="dashboard-layout">
-      {/* Compact header — replaces the old oversized welcome banner */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
-            Welcome back,{' '}
-            <span className="text-foreground">
-              {(user?.name || 'Developer').split(' ')[0]}
-            </span>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            {greeting()}, {(user?.name || 'there').split(' ')[0]}
           </h1>
-          <p className="text-xs text-subtle mt-1">Here's how your practice is trending.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-3 shrink-0">
-          <button
-            onClick={fetchDashboardData}
-            disabled={refreshing}
-            className="px-3.5 py-2 bg-surface-2 hover:bg-surface-3 text-muted-foreground hover:text-foreground border border-border-strong text-xs rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={onOpenNewProblem}
-            className="px-4 py-2 bg-primary hover:opacity-95 text-primary-foreground text-xs font-bold rounded-xl shadow-lg inline-flex items-center gap-1.5 cursor-pointer transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            Track Problem
-          </button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={refresh} disabled={refreshing} aria-label="Refresh">
+            <RefreshCw className={cn(refreshing && 'animate-spin')} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+          <Button size="sm" onClick={onOpenNewProblem}>
+            <Plus /> Track problem
+          </Button>
         </div>
       </div>
 
-      {problemsQuery.error && (
-        <QueryError title="Couldn't load your problems" message={problemsQuery.error.message} onRetry={fetchDashboardData} />
+      {summary.error && (
+        <QueryError title="Couldn't load your stats" message={summary.error} onRetry={refresh} />
       )}
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">
-          <RefreshCw className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-xs text-subtle mt-4 uppercase tracking-wider">Loading stats...</p>
-        </div>
-      ) : (
+      {!s && !summary.error ? (
+        <DashboardSkeleton />
+      ) : s ? (
         <>
-          {/* Hero stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Solved"
-              value={solvedCount}
-              icon={<CheckCircle2 className="w-4 h-4" />}
-              accent="emerald"
-              sub={`${problems.length} tracked`}
+          {/* Tiles */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatTile
+              label="Today"
+              value={<>{s.today.solved}<span className="text-base font-normal text-muted-foreground"> / {s.today.target}</span></>}
+              sub={s.today.goalMet ? 'Daily goal met' : `${plural(s.today.remaining, 'problem')} to your goal`}
+            >
+              <Meter value={s.today.target ? s.today.solved / s.today.target : 0} barClassName={s.today.goalMet ? 'bg-success' : undefined} />
+            </StatTile>
+            <StatTile
+              label="Streak"
+              value={plural(s.streak.current, 'day')}
+              sub={
+                s.streak.current > 0 && !s.streak.activeToday
+                  ? `Solve today to keep it · best ${s.streak.longest}`
+                  : `Longest ${plural(s.streak.longest, 'day')}`
+              }
             />
-            <StatCard
-              label="Acceptance Rate"
-              value={`${acceptanceRate}%`}
-              icon={<Percent className="w-4 h-4" />}
-              accent="pink"
-              sub={`${entries.length} submission${entries.length !== 1 ? 's' : ''}`}
+            <StatTile
+              label="Solved"
+              value={s.totals.solved.toLocaleString()}
+              sub={`of ${s.totals.problems.toLocaleString()} tracked · ${s.totals.attempted} attempted`}
             />
-            <StatCard
-              label="Current Streak"
-              value={streak.current}
-              icon={<Flame className="w-4 h-4" />}
-              accent="amber"
-              sub={streak.current > 0 ? `${streak.current === 1 ? 'day' : 'days'} active` : 'solve today to start'}
-            />
-            <StatCard
-              label="AI Analyses"
-              value={aiAnalysesCount}
-              icon={<Brain className="w-4 h-4" />}
-              accent="indigo"
-              sub="problems analyzed"
+            <StatTile
+              label="Acceptance"
+              value={s.totals.acceptanceRate === null ? '—' : `${Math.round(s.totals.acceptanceRate * 100)}%`}
+              sub={`${s.totals.acceptedSubmissions.toLocaleString()} of ${plural(s.totals.submissions, 'submission')}`}
             />
           </div>
 
-          {/* GitHub-style solve heatmap */}
-          <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-            <div className="flex items-center gap-2 border-b border-border pb-4">
-              <Activity className="text-primary w-4 h-4" />
-              <h3 className="text-sm font-bold text-foreground">Solve Activity</h3>
-            </div>
-            <Heatmap data={heatmapData} />
-          </div>
-
-          {/* Topic Mastery + Difficulty Breakdown */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-6 bg-card border border-border rounded-2xl p-6 space-y-5">
-              <div className="flex items-center justify-between border-b border-border pb-4">
-                <div className="flex items-center gap-2">
-                  <Layers className="text-primary w-4 h-4" />
-                  <h3 className="text-sm font-bold text-foreground">Topic Mastery</h3>
-                </div>
-                <button
-                  onClick={() => onNavigate('/insights')}
-                  className="text-[11px] text-primary hover:text-primary font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  Details <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-              <TopicMasteryBars data={topicMastery} limit={6} />
-            </div>
-
-            <div className="lg:col-span-6 bg-card border border-border rounded-2xl p-6 space-y-5">
-              <div className="flex items-center gap-2 border-b border-border pb-4">
-                <Award className="text-primary w-4 h-4" />
-                <h3 className="text-sm font-bold text-foreground">Difficulty Breakdown</h3>
-              </div>
-              <div className="flex flex-col items-center gap-5">
-                <DifficultyPieChart
-                  easy={difficultyBreakdown.easySolved}
-                  medium={difficultyBreakdown.mediumSolved}
-                  hard={difficultyBreakdown.hardSolved}
-                />
-                <div className="grid grid-cols-3 gap-3 w-full pt-2 border-t border-border">
-                  {[
-                    { label: 'Easy', solved: difficultyBreakdown.easySolved, total: difficultyBreakdown.easy, color: difficultyStyle('Easy').text },
-                    { label: 'Medium', solved: difficultyBreakdown.mediumSolved, total: difficultyBreakdown.medium, color: difficultyStyle('Medium').text },
-                    { label: 'Hard', solved: difficultyBreakdown.hardSolved, total: difficultyBreakdown.hard, color: difficultyStyle('Hard').text },
-                  ].map((d) => (
-                    <div key={d.label} className="bg-surface-2 p-3 border border-border rounded-xl text-center">
-                      <p className="text-[10px] text-subtle uppercase tracking-wide">{d.label}</p>
-                      <p className={`text-base font-extrabold mt-1  ${d.color}`}>
-                        {d.solved}<span className="text-faint">/{d.total}</span>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Recent Activity + AI Insights + Goal / Suggested Problem */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-card border border-border rounded-2xl p-6">
-              <div className="flex items-center justify-between border-b border-border pb-4 mb-2">
-                <div className="flex items-center gap-2">
-                  <Clock className="text-primary w-4 h-4" />
-                  <h3 className="text-sm font-bold text-foreground">Recent Activity</h3>
-                </div>
-                <button
-                  onClick={() => onNavigate('/problems')}
-                  className="text-[11px] text-primary hover:text-primary font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  View all <ChevronRight className="w-3 h-3" />
-                </button>
-              </div>
-
-              {recentActivity.length > 0 ? (
-                <RecentActivityFeed entries={recentActivity} />
-              ) : recentProblemsFallback.length > 0 ? (
-                <div className="divide-y divide-border">
-                  {recentProblemsFallback.map((p) => (
-                    <button
-                      key={p._id}
-                      onClick={() => onNavigate('/problems')}
-                      className="w-full flex items-center gap-3 py-3 text-left hover:bg-surface-2 transition-colors px-2 -mx-2 rounded-lg group cursor-pointer"
-                    >
-                      <DifficultyBadge difficulty={p.difficulty} className="shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-semibold text-foreground truncate group-hover:text-foreground">{p.title}</p>
-                        <p className="text-[10px] text-subtle">{p.status}</p>
-                      </div>
-                      <ChevronRight className="w-3.5 h-3.5 text-faint shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-faint text-xs">
-                  No problems yet.{' '}
-                  <button onClick={onOpenNewProblem} className="text-primary hover:underline cursor-pointer">
-                    Add your first one.
+          {/* Activity heatmap */}
+          <Panel
+            title="Activity"
+            action={
+              <div className="flex rounded-md border border-border p-0.5 text-xs" role="group" aria-label="Heatmap shows">
+                {(['solved', 'submissions'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setHeatmapMode(m)}
+                    aria-pressed={heatmapMode === m}
+                    className={cn(
+                      'rounded px-2 py-0.5 capitalize transition-colors',
+                      heatmapMode === m ? 'bg-surface-3 text-foreground' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {m}
                   </button>
-                </div>
-              )}
-            </div>
-
-            <div className="lg:col-span-4">
-              <AIInsightsPanel insights={aiInsights} />
-            </div>
-
-            <div className="lg:col-span-3 space-y-6">
-              {/* Compact daily goal meter */}
-              <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Gauge className="text-primary w-4 h-4" />
-                  <h3 className="text-xs font-bold text-foreground">Daily Goal</h3>
-                </div>
-                <div className="relative flex items-center justify-center py-2">
-                  <svg className="w-20 h-20 transform -rotate-90">
-                    <circle cx="40" cy="40" r="33" className="stroke-border fill-transparent" strokeWidth="7" />
-                    <circle
-                      cx="40" cy="40" r="33"
-                      className="stroke-primary fill-transparent transition-all duration-700"
-                      strokeWidth="7"
-                      strokeDasharray={2 * Math.PI * 33}
-                      strokeDashoffset={2 * Math.PI * 33 * (1 - goalPct / 100)}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <p className="text-sm font-black text-foreground">{goalPct}%</p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-subtle text-center">
-                  {solvedCount} / {targetGoal} target
-                </p>
+                ))}
               </div>
+            }
+          >
+            <Heatmap
+              data={heatmapData}
+              unit={heatmapMode === 'solved' ? ['problem solved', 'problems solved'] : ['submission', 'submissions']}
+            />
+          </Panel>
 
-              <SuggestedProblemCard problem={suggested} onAddProblem={onOpenNewProblem} />
-            </div>
+          {/* Trend + difficulty */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Panel title="Solved per month" className="lg:col-span-2" action={<PanelLink to="/analytics">Analytics</PanelLink>}>
+              <MonthlySolvedChart months={s.solvedByMonth} />
+            </Panel>
+            <Panel title="By difficulty">
+              <DifficultyProgress byDifficulty={s.byDifficulty} />
+            </Panel>
+          </div>
+
+          {/* Recent, topics, AI */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Panel title="Recent activity" action={<PanelLink to="/problems">All problems</PanelLink>}>
+              {recent.error
+                ? <QueryError title="Couldn't load recent problems" message={recent.error.message} onRetry={() => recent.refetch()} />
+                : recent.isPending ? <Skeleton className="h-48" /> : <RecentProblems items={recentItems} />}
+            </Panel>
+
+            <Panel title="Top topics" action={<PanelLink to="/analytics">More</PanelLink>}>
+              <TopicList topics={s.topics} />
+            </Panel>
+
+            <Panel title="AI reviews" action={<PanelLink to="/insights">Insights</PanelLink>}>
+              <div className="space-y-4">
+                <div>
+                  <p className="text-2xl font-semibold tabular-nums text-foreground">
+                    {s.totals.aiAnalyzed}
+                    <span className="text-base font-normal text-muted-foreground"> / {s.totals.solved}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">solved problems reviewed by AI</p>
+                  <Meter className="mt-2" value={s.totals.solved ? s.totals.aiAnalyzed / s.totals.solved : 0} />
+                  {s.totals.aiStale > 0 && (
+                    <p className="mt-2 text-xs text-warning">{plural(s.totals.aiStale, 'review')} out of date</p>
+                  )}
+                </div>
+                {toReview && (
+                  <Link
+                    to={`/problems/${toReview._id}?tab=analysis`}
+                    className="flex items-start gap-3 rounded-md border border-border p-3 transition-colors hover:bg-surface-2"
+                  >
+                    <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block text-xs text-muted-foreground">
+                        {toReview.hasAiAnalysis ? 'Re-review your latest code' : 'Review your latest solution'}
+                      </span>
+                      <span className="block truncate text-sm font-medium text-foreground">{toReview.title}</span>
+                    </span>
+                  </Link>
+                )}
+              </div>
+            </Panel>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   );
 };

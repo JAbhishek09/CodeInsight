@@ -48,6 +48,44 @@ export function useAllProblems() {
   return useProblemList();
 }
 
+/** A row from GET /api/problems?view=list — no code or analysis bodies. */
+export interface ProblemListItem {
+  _id: string;
+  title: string;
+  platform: string;
+  difficulty: string;
+  status: ProblemStatus;
+  tags: string[];
+  url?: string;
+  submissionCount: number;
+  acceptedCount: number;
+  hasCode: boolean;
+  hasAiAnalysis: boolean;
+  aiStatus: string;
+  aiIsStale: boolean;
+  latestVerdict: string | null;
+  latestLanguage: string | null;
+  lastSubmittedAt: string | null;
+  firstSolvedAt: string | null;
+}
+
+export interface ProblemListPage {
+  data: ProblemListItem[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+/** Lightweight, paginated problem list (GET /api/problems?view=list). */
+export function useProblemListView(params: Record<string, string | number> = {}) {
+  const qs = Object.fromEntries(Object.entries({ view: 'list', ...params }).map(([k, v]) => [k, String(v)]));
+  return useQuery({
+    queryKey: problemKeys.list(qs),
+    queryFn: async () => (await getProblems(qs)) as ProblemListPage,
+    placeholderData: keepPreviousData,
+  });
+}
+
 /** A 'pending' analysis older than this is a dead job (matches the backend). */
 export const ANALYSIS_STALE_PENDING_MS = 3 * 60 * 1000;
 

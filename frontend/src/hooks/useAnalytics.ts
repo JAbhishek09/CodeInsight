@@ -48,5 +48,7 @@ export function useAnalytics(platform: AnalyticsPlatform = 'all') {
     data: query.data ?? null,
     loading: query.isPending,
     error: query.error ? query.error.message : null,
+    fetching: query.isFetching,
+    refetch: query.refetch,
   };
 }

@@ -5,6 +5,8 @@ interface HeatmapProps {
   data: Record<string, number>;
   /** how many weeks of history to render (default ~1 year) */
   weeks?: number;
+  /** What a count means, e.g. ['problem solved', 'problems solved']. */
+  unit?: [singular: string, plural: string];
 }
 
 const LEVELS = [
@@ -28,12 +30,12 @@ const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 /**
  * GitHub-style contribution heatmap.
  *
- * Built entirely from `submissions[].submittedAt` already returned by
- * `GET /api/problems` — no dedicated backend endpoint required. Cells with
- * no recorded activity simply render at the lowest intensity (empty), so
- * this degrades gracefully to an all-empty grid for brand-new accounts.
+ * Takes per-day counts keyed by local date (YYYY-MM-DD), e.g. solvedByDay or
+ * submissionsByDay from GET /api/analytics/summary. Days with no activity
+ * render at the lowest intensity, so new accounts get an empty grid.
  */
-export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
+export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'problems solved'] }: HeatmapProps) {
+  const label = (n: number) => `${n} ${n === 1 ? unit[0] : unit[1]}`;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -119,7 +121,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
                 
               >
                 <title>
-                  {c.count} solved · {c.date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {label(c.count)} · {c.date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                 </title>
               </rect>
             );
@@ -127,7 +129,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
         </svg>
       </div>
       <div className="flex items-center justify-between text-[10px] text-subtle">
-        <span><span className="tabular-nums">{totalSolves}</span> solves in the last {weeks} weeks</span>
+        <span><span className="tabular-nums">{label(totalSolves)}</span> in the last year</span>
         <div className="flex items-center gap-1.5">
           <span>Less</span>
           {LEVELS.map((l, i) => (
