@@ -11,9 +11,9 @@ interface Submission {
 interface Problem {
   _id: string;
   title: string;
-  platform: string;
+  platform?: string;
   difficulty?: string;
-  submissions: Submission[];
+  submissions?: Submission[];
   url?: string;
 }
 
@@ -31,8 +31,8 @@ export default function SubmissionsTable({ problems }: SubmissionsTableProps) {
 
   // Sort: problems with non-AC submissions first (most interesting for analysis)
   const sorted = [...problems].sort((a, b) => {
-    const aHasFail = a.submissions.some((s) => s.verdict !== 'Accepted');
-    const bHasFail = b.submissions.some((s) => s.verdict !== 'Accepted');
+    const aHasFail = (a.submissions ?? []).some((s) => s.verdict !== 'Accepted');
+    const bHasFail = (b.submissions ?? []).some((s) => s.verdict !== 'Accepted');
     return Number(bHasFail) - Number(aHasFail);
   });
 
@@ -59,7 +59,7 @@ export default function SubmissionsTable({ problems }: SubmissionsTableProps) {
         </thead>
         <tbody>
           {sorted.map((prob) => {
-            const hasCode = prob.submissions.some((s) => s.code?.trim());
+            const hasCode = (prob.submissions ?? []).some((s) => s.code?.trim());
             return (
               <tr
                 key={prob._id}
@@ -84,9 +84,9 @@ export default function SubmissionsTable({ problems }: SubmissionsTableProps) {
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{prob.difficulty || '—'}</td>
                 <td className="px-4 py-3">
-                  <VerdictBadge verdict={getBestVerdict(prob.submissions)} />
+                  <VerdictBadge verdict={getBestVerdict(prob.submissions ?? [])} />
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{prob.submissions.length}</td>
+                <td className="px-4 py-3 text-muted-foreground">{prob.submissions?.length ?? 0}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     {/* View detail */}

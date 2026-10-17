@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { createProblem } from '../api/problems.api';
+import { useCreateProblem } from '../hooks/useProblems';
 import { Loader2, Plus } from 'lucide-react';
 
 interface AddProblemFormProps {
@@ -21,6 +21,7 @@ export default function AddProblemForm({ onSuccess, onCancel }: AddProblemFormPr
     timeComplexity: 'O(N)',
     spaceComplexity: 'O(N)',
   });
+  const create = useCreateProblem();
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -32,7 +33,7 @@ export default function AddProblemForm({ onSuccess, onCancel }: AddProblemFormPr
     setError(null);
     setLoading(true);
     try {
-      await createProblem({ ...form } as any);
+      await create.mutateAsync({ ...form } as any);
       onSuccess();
     } catch (e: any) {
       // axiosInstance interceptor re-throws as plain Error; use e.message directly

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getProblems } from '../api/problems.api';
+import { useAllProblems } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import type { Problem } from '../types/problem';
+
+const NO_PROBLEMS: Problem[] = [];
 import TopicMasteryBars from '../components/TopicMasteryBars';
 import EmptyState from '../components/EmptyState';
 import { computeTopicMastery, computeAIInsights, computeBlindSpots, computeTimeToOptimal } from '../utils/stats';
@@ -27,8 +30,9 @@ type ComplexityFilter = 'all' | 'time' | 'space';
 
 export default function InsightsPage() {
   const navigate = useNavigate();
-  const [problems, setProblems] = useState<Problem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const problemsQuery = useAllProblems();
+  const problems = problemsQuery.data ?? NO_PROBLEMS;
+  const loading = problemsQuery.isPending;
 
   // UX state for the new interactive sections
   const [complexityFilter, setComplexityFilter] = useState<ComplexityFilter>('all');
@@ -36,21 +40,7 @@ export default function InsightsPage() {
   const [expandedBlindSpots, setExpandedBlindSpots] = useState<Set<string>>(new Set());
   const [showRevisitList, setShowRevisitList] = useState(false);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const res = await getProblems();
-      if (res?.success && res?.data) setProblems(res.data);
-    } catch (err) {
-      console.error('Failed to load AI insights', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const fetchData = () => { problemsQuery.refetch(); };
 
   const topicMastery = useMemo(() => computeTopicMastery(problems), [problems]);
   const insights = useMemo(() => computeAIInsights(problems, topicMastery), [problems, topicMastery]);
@@ -105,13 +95,17 @@ export default function InsightsPage() {
         </div>
         <button
           onClick={fetchData}
-          disabled={loading}
+          disabled={problemsQuery.isFetching}
           className="px-3.5 py-2 bg-surface-2 hover:bg-surface-3 text-muted-foreground hover:text-foreground border border-border-strong text-xs rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${problemsQuery.isFetching ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
+
+      {problemsQuery.error && (
+        <QueryError title="Couldn't load your problems" message={problemsQuery.error.message} onRetry={fetchData} />
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">

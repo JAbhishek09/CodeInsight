@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { updateProblem } from '../api/problems.api';
+import { useUpdateProblem } from '../hooks/useProblems';
 import type { Problem } from '../types/problem';
 import { Loader2, Save } from 'lucide-react';
 
@@ -23,6 +23,7 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
     timeComplexity:  problem.timeComplexity || 'O(N)',
     spaceComplexity: problem.spaceComplexity || 'O(N)',
   });
+  const update = useUpdateProblem();
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
 
@@ -34,7 +35,7 @@ export default function EditProblemForm({ problem, onSuccess, onCancel }: EditPr
     setError(null);
     setLoading(true);
     try {
-      await updateProblem(problem._id, form as any);
+      await update.mutateAsync({ id: problem._id, data: form as any });
       onSuccess();
     } catch (e: any) {
       // axiosInstance interceptor re-throws as plain Error; use e.message directly

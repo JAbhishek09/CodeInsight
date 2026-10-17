@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getProblemById } from '../api/problems.api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { problemKeys, useProblem } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import { triggerAnalysis } from '../api/analysis.api';
 import ComplexityCard from '../components/ComplexityCard';
 import OptimizationList from '../components/OptimizationList';
@@ -99,9 +101,11 @@ const MAX_POLL_ATTEMPTS = 15;
 export default function AnalysisPage() {
   const { problemId } = useParams<{ problemId: string }>();
   const navigate = useNavigate();
-  const [problem, setProblem] = useState<any>(null);
+  const queryClient = useQueryClient();
+  const problemQuery = useProblem(problemId);
+  const problem: any = problemQuery.data;
+  const analyze = useMutation({ mutationFn: triggerAnalysis });
   const [analysis, setAnalysis] = useState<AIAnalysis | null>(null);
-  const [loadingProblem, setLoadingProblem] = useState(true);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
@@ -129,17 +133,13 @@ export default function AnalysisPage() {
     if (!problemId) return;
     clearPoll();
     setPendingMessage(null);
-    setLoadingProblem(true);
-    getProblemById(problemId)
-      .then((res) => {
-        setProblem(res.data);
-        if (res.data?.aiAnalysis?.complexityAnalysis) {
-          setAnalysis({ ...res.data.aiAnalysis, fromCache: true });
-        }
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoadingProblem(false));
   }, [problemId, clearPoll]);
+
+  // Show a previously stored analysis as soon as the problem loads.
+  const storedAnalysis = problem?.aiAnalysis?.complexityAnalysis ? problem.aiAnalysis : null;
+  useEffect(() => {
+    if (storedAnalysis) setAnalysis((cur) => cur ?? { ...storedAnalysis, fromCache: true });
+  }, [storedAnalysis]);
 
   const runAnalysis = async (attempt = 0) => {
     if (!problemId) return;
@@ -147,7 +147,7 @@ export default function AnalysisPage() {
     setLoadingAnalysis(true);
     setError(null);
     try {
-      const data = await triggerAnalysis(problemId);
+      const data = await analyze.mutateAsync(problemId);
       if (!mountedRef.current) return;
 
       if (data.pending || !data.analysis) {
@@ -166,6 +166,8 @@ export default function AnalysisPage() {
       setPendingMessage(null);
       setAnalysis({ ...data.analysis, fromCache: data.fromCache });
       setLoadingAnalysis(false);
+      // Problem cards / insights read aiAnalysis from the cached lists.
+      queryClient.invalidateQueries({ queryKey: problemKeys.all });
     } catch (e: any) {
       if (!mountedRef.current) return;
       setPendingMessage(null);
@@ -180,12 +182,16 @@ export default function AnalysisPage() {
   const latestSubmissionWithCode = sortedSubmissions.find((s: any) => s.code?.trim().length > 0);
   const latestSubmission = sortedSubmissions[0] ?? null;
 
-  if (loadingProblem) {
+  if (problemQuery.isPending && problemId) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
+  }
+
+  if (problemQuery.error) {
+    return <QueryError title="Couldn't load this problem" message={problemQuery.error.message} onRetry={() => problemQuery.refetch()} />;
   }
 
   if (!problem) {

@@ -5,6 +5,8 @@ import { ProblemCard } from '../components/ProblemCard';
 import type { Problem } from '../types/problem';
 import ProblemFilters from '../components/ProblemFilters';
 import EmptyState from '../components/EmptyState';
+import QueryError from '../components/QueryError';
+import { toast } from 'sonner';
 import { Modal } from '../components/Modal';
 import AddProblemForm from './AddProblemPage';
 import EditProblemForm from './EditProblemPage';
@@ -66,9 +68,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
         resultCount={problems.length}
       />
 
-      {error && (
-        <div className="bg-danger/10 border border-danger/20 rounded-xl p-4 text-xs text-danger">✗ {error}</div>
-      )}
+      {error && <QueryError title="Couldn't load problems" message={error} onRetry={() => refetch()} />}
 
       {/* Grid */}
       {loading ? (
@@ -98,8 +98,8 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
               key={problem._id}
               problem={problem}
               onEdit={(p) => setEditTarget(p)}
-              onDelete={removeProblem}
-              onToggleStatus={toggleStatus}
+              onDelete={(id) => removeProblem(id).catch((e) => { toast.error(`Delete failed: ${e.message}`); })}
+              onToggleStatus={(id, next) => toggleStatus(id, next).catch((e) => { toast.error(`Status update failed: ${e.message}`); })}
             />
           ))}
         </div>
@@ -107,14 +107,14 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = ({ onNavigate }) => {
 
       {/* Modals */}
       <Modal isOpen={showAdd} onClose={() => setShowAdd(false)} title="Track New Problem">
-        <AddProblemForm onSuccess={() => { setShowAdd(false); refetch(); }} onCancel={() => setShowAdd(false)} />
+        <AddProblemForm onSuccess={() => { setShowAdd(false); toast.success('Problem added'); }} onCancel={() => setShowAdd(false)} />
       </Modal>
 
       <Modal isOpen={!!editTarget} onClose={() => setEditTarget(null)} title="Edit Problem">
         {editTarget && (
           <EditProblemForm
             problem={editTarget}
-            onSuccess={() => { setEditTarget(null); refetch(); }}
+            onSuccess={() => { setEditTarget(null); toast.success('Problem updated'); }}
             onCancel={() => setEditTarget(null)}
           />
         )}

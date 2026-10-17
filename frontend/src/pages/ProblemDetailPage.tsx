@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getProblemById } from '../api/problems.api';
+import { useProblem } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import VerdictBadge from '../components/VerdictBadge';
 import CodeViewer from '../components/CodeViewer';
 import {
@@ -21,19 +22,11 @@ interface Submission {
 export default function ProblemDetailPage() {
   const { problemId } = useParams<{ problemId: string }>();
   const navigate = useNavigate();
-  const [problem, setProblem] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const problemQuery = useProblem(problemId);
+  const problem: any = problemQuery.data;
+  const loading = problemQuery.isPending && Boolean(problemId);
   const [expandedSubmission, setExpandedSubmission] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!problemId) return;
-    setLoading(true);
-    getProblemById(problemId)
-      .then((res) => setProblem(res.data))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [problemId]);
 
   if (loading) {
     return (
@@ -43,12 +36,12 @@ export default function ProblemDetailPage() {
     );
   }
 
-  if (error || !problem) {
-    return (
-      <div className="text-center py-12 text-subtle text-sm">
-        {error || 'Problem not found.'}
-      </div>
-    );
+  if (problemQuery.error) {
+    return <QueryError title="Couldn't load this problem" message={problemQuery.error.message} onRetry={() => problemQuery.refetch()} />;
+  }
+
+  if (!problem) {
+    return <div className="text-center py-12 text-subtle text-sm">Problem not found.</div>;
   }
 
   const submissions: Submission[] = [...(problem.submissions || [])].sort(

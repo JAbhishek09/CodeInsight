@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { difficultyStyle } from '../lib/difficulty';
-import { getProblems } from '../api/problems.api';
+import { useAllProblems } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import type { Problem } from '../types/problem';
+
+const NO_PROBLEMS: Problem[] = [];
 import { useAnalytics } from '../hooks/useAnalytics';
 import StatCard from '../components/StatCard';
 import TrendChart from '../components/TrendChart';
@@ -48,24 +51,13 @@ const PLATFORM_TABS: { id: PlatformTab; label: string; accentClass: string }[] =
 ];
 
 export default function AnalyticsPage() {
-  const [allProblems, setAllProblems] = useState<Problem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const problemsQuery = useAllProblems();
+  const allProblems = problemsQuery.data ?? NO_PROBLEMS;
+  const loading = problemsQuery.isPending;
   const [activePlatform, setActivePlatform] = useState<PlatformTab>('all');
   const { data: backendSummary, loading: summaryLoading } = useAnalytics();
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const res = await getProblems();
-      if (res?.success && res?.data) setAllProblems(res.data);
-    } catch (err) {
-      console.error('Failed to load analytics data', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, []);
+  const fetchData = () => { problemsQuery.refetch(); };
 
   // ── Filter problems by selected platform tab ──────────────────────────
   const problems = useMemo(() => {
@@ -129,10 +121,10 @@ export default function AnalyticsPage() {
         </div>
         <button
           onClick={fetchData}
-          disabled={loading}
+          disabled={problemsQuery.isFetching}
           className="px-3.5 py-2 bg-surface-2 hover:bg-surface-3 text-muted-foreground hover:text-foreground border border-border-strong text-xs rounded-xl inline-flex items-center gap-2 transition-all cursor-pointer"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${problemsQuery.isFetching ? 'animate-spin' : ''}`} />
           Refresh
         </button>
       </div>
@@ -162,6 +154,10 @@ export default function AnalyticsPage() {
           );
         })}
       </div>
+
+      {problemsQuery.error && (
+        <QueryError title="Couldn't load your problems" message={problemsQuery.error.message} onRetry={fetchData} />
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">

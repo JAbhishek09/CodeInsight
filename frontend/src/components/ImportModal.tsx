@@ -3,6 +3,8 @@ import { X, Download, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import ProfileInput from './ProfileInput';
 import HistoryImport from './HistoryImport';
+import { useQueryClient } from '@tanstack/react-query';
+import { problemKeys } from '../hooks/useProblems';
 
 interface ImportModalProps {
   isOpen: boolean;
@@ -26,7 +28,11 @@ export default function ImportModal({ isOpen, onClose }: ImportModalProps) {
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
-  const handleSyncComplete = () => refreshUser?.();
+  const queryClient = useQueryClient();
+  const handleSyncComplete = () => {
+    refreshUser?.();
+    queryClient.invalidateQueries({ queryKey: problemKeys.all });
+  };
 
   if (!isOpen) return null;
 

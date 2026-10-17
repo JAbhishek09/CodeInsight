@@ -2,8 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { difficultyStyle } from '../lib/difficulty';
 import { useAuth } from '../hooks/useAuth';
-import { getProblems } from '../api/problems.api';
+import { useAllProblems } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import type { Problem } from '../types/problem';
+
+const NO_PROBLEMS: Problem[] = [];
 import StatCard from '../components/StatCard';
 import DifficultyPieChart from '../components/DifficultyPieChart';
 import TopicMasteryBars from '../components/TopicMasteryBars';
@@ -45,29 +48,14 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpenNewProblem }) => {
   const { user, refreshUser } = useAuth();
-  const [problems, setProblems] = useState<Problem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const fetchDashboardData = async () => {
-    try {
-      setRefreshing(true);
-      const res = await getProblems();
-      if (res?.success && res?.data) {
-        setProblems(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to load dashboard statistics', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const problemsQuery = useAllProblems();
+  const problems = problemsQuery.data ?? NO_PROBLEMS;
+  const loading = problemsQuery.isPending;
+  const refreshing = problemsQuery.isFetching;
+  const fetchDashboardData = () => { problemsQuery.refetch(); };
 
   useEffect(() => {
-    fetchDashboardData();
     refreshUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshUser]);
 
   // ── Derived analytics (client-side — see utils/stats.ts) ─────────────────
@@ -128,6 +116,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onOpen
           </button>
         </div>
       </div>
+
+      {problemsQuery.error && (
+        <QueryError title="Couldn't load your problems" message={problemsQuery.error.message} onRetry={fetchDashboardData} />
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center min-h-[300px] border border-border rounded-2xl">

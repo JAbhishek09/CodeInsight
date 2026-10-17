@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { getProblems } from '../api/problems.api';
+import { useQueryClient } from '@tanstack/react-query';
+import { problemKeys, useProblemList } from '../hooks/useProblems';
+import QueryError from '../components/QueryError';
 import ProfileInput from '../components/ProfileInput';
 import HistoryImport from '../components/HistoryImport';
 import SubmissionsTable from '../components/SubmissionsTable';
@@ -28,32 +30,18 @@ const TABS: { id: SettingsTab; label: string; Icon: typeof Settings }[] = [
 export default function ProfilePage() {
   const { user, refreshUser } = useAuth();
   const [tab, setTab] = useState<SettingsTab>('account');
-  const [syncedProblems, setSyncedProblems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadSyncedProblems = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [lcRes, cfRes] = await Promise.all([
-        getProblems({ platform: 'leetcode' }),
-        getProblems({ platform: 'codeforces' }),
-      ]);
-      const all = [...(lcRes?.data || []), ...(cfRes?.data || [])];
-      setSyncedProblems(all);
-    } catch (e) {
-      console.error('Failed to load synced problems', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSyncedProblems();
-  }, [loadSyncedProblems]);
+  const queryClient = useQueryClient();
+  const lcQuery = useProblemList({ platform: 'leetcode' });
+  const cfQuery = useProblemList({ platform: 'codeforces' });
+  const syncedProblems = useMemo(() => [...(lcQuery.data ?? []), ...(cfQuery.data ?? [])], [lcQuery.data, cfQuery.data]);
+  const loading = lcQuery.isPending || cfQuery.isPending;
+  const fetching = lcQuery.isFetching || cfQuery.isFetching;
+  const syncedError = lcQuery.error ?? cfQuery.error;
+  const loadSyncedProblems = useCallback(() => { lcQuery.refetch(); cfQuery.refetch(); }, [lcQuery, cfQuery]);
 
   const handleSyncComplete = () => {
     refreshUser();
-    loadSyncedProblems();
+    queryClient.invalidateQueries({ queryKey: problemKeys.all });
   };
 
   const initials = (user?.name || '?')
@@ -213,15 +201,18 @@ export default function ProfilePage() {
               </span>
               <button
                 onClick={loadSyncedProblems}
-                disabled={loading}
+                disabled={fetching}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
             </div>
           </div>
 
+          {syncedError && (
+            <QueryError title="Couldn't load synced problems" message={syncedError.message} onRetry={loadSyncedProblems} />
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="w-6 h-6 animate-spin text-primary" />

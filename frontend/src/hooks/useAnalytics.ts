@@ -1,24 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import api from '../api/axiosInstance';
 
-interface AnalyticsSummary {
+export interface AnalyticsSummary {
   byPlatform: { _id: string; count: number }[];
   verdictDist: { _id: string; count: number }[];
   needsAnalysis: number;
 }
 
 export function useAnalytics() {
-  const [data, setData] = useState<AnalyticsSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .get('/analytics/summary')
-      .then((res) => setData(res.data?.data || null))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
-
-  return { data, loading, error };
+  const query = useQuery({
+    queryKey: ['analytics', 'summary'],
+    queryFn: async () => ((await api.get('/analytics/summary')).data?.data ?? null) as AnalyticsSummary | null,
+  });
+  return {
+    data: query.data ?? null,
+    loading: query.isPending,
+    error: query.error ? query.error.message : null,
+  };
 }
