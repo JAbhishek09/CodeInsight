@@ -2,6 +2,8 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 import { computeAiAnalysisMeta } from '../utils/aiMeta.js';
 import { patternForProblem } from '../services/patternService.js';
+import { diagnoseProblem } from '../services/diagnosisService.js';
+import { latestFeedback } from '../services/predictionService.js';
 import { escapeRegex, listProblems, parseListQuery } from '../services/problemListService.js';
 
 // Fields a user may edit via PUT /api/problems/:id. Ownership, submissions and
@@ -99,6 +101,10 @@ export const getProblemById = asyncHandler(async (req, res) => {
   const data = problem.toObject();
   data.aiAnalysisMeta = computeAiAnalysisMeta(problem);
   data.pattern = patternForProblem(problem);
+  const feedback = problem.platform === 'leetcode' && problem.platformProblemId
+    ? await latestFeedback(req.user._id, problem.platformProblemId)
+    : null;
+  data.diagnosis = diagnoseProblem(problem, feedback);
 
   res.status(200).json({ success: true, data });
 });

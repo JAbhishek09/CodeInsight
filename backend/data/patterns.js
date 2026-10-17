@@ -30,6 +30,12 @@ export const PATTERNS = [
       'Using two pointers on unsorted data where order doesn’t tell you which pointer to move',
       'Reaching for a hash map when the input is already sorted and pointers need no extra space',
     ],
+    edgeChecklist: [
+      "Empty array or a single element",
+      "Pointers crossing (`l < r` vs `l <= r`)",
+      "Duplicates — skip equal values to avoid repeated answers",
+      "Moving the wrong pointer after a match",
+    ],
     template: `int l = 0, r = nums.size() - 1;
 while (l < r) {
     int cur = nums[l] + nums[r];
@@ -58,6 +64,12 @@ while (l < r) {
       'Recomputing every subarray sum with nested loops instead of a running prefix',
       'Sliding window on arrays with negative numbers — the window can’t shrink safely, prefix sums can',
       'Sorting to find duplicates when a set answers it in O(n)',
+    ],
+    edgeChecklist: [
+      "Initialise the map with prefix 0 (`seen[0] = 1`)",
+      "Look up before inserting the current element",
+      "Integer overflow on running sums",
+      "Negative numbers and zero",
     ],
     template: `unordered_map<int, int> seen;   // prefix sum -> how many times
 seen[0] = 1;
@@ -88,6 +100,12 @@ for (int x : nums) {
       'Re-checking every substring with nested loops — O(n²) or worse',
       'Using it when elements can be negative and a sum condition is involved (use prefix sums)',
       'Shrinking with `if` instead of `while`, leaving the window invalid',
+    ],
+    edgeChecklist: [
+      "Shrink with `while`, not `if`",
+      "Update the answer after the window is valid again",
+      "Remove the left element’s count before moving left",
+      "Window larger than the input",
     ],
     template: `unordered_map<char, int> inWindow;
 int left = 0, best = 0;
@@ -121,6 +139,12 @@ for (int right = 0; right < s.size(); right++) {
       'Trying every candidate answer instead of binary searching the answer range',
       'Off-by-one loops: mixing `l < r` with `r = mid - 1` and missing the boundary',
     ],
+    edgeChecklist: [
+      "`mid = lo + (hi - lo) / 2` to avoid overflow",
+      "Loop condition matches the update (`lo < hi` with `hi = mid`)",
+      "Answer may be at the boundaries",
+      "Search range of the answer, not the array indices",
+    ],
     template: `// smallest x in [lo, hi] where ok(x) is true
 int lo = 1, hi = maxValue;
 while (lo < hi) {
@@ -150,6 +174,12 @@ return lo;`,
       'For each element, scanning forward to find the next greater one — O(n²)',
       'Storing values when you need indices to compute distances',
       'Forgetting to process what is still on the stack at the end',
+    ],
+    edgeChecklist: [
+      "Pop until the condition fails, not just once",
+      "Store indices when you need distances",
+      "Handle items still on the stack at the end",
+      "Empty stack before `top()`/`pop()`",
     ],
     template: `vector<int> nextGreater(n, -1);
 stack<int> st;                         // indices, values decreasing
@@ -181,6 +211,12 @@ for (int i = 0; i < n; i++) {
       'Using DFS when the question asks for the shortest number of steps',
       'Forgetting to mark cells as visited, causing infinite loops or repeated work',
       'Starting a BFS from every cell instead of one multi-source BFS',
+    ],
+    edgeChecklist: [
+      "Mark visited when you push, not when you pop",
+      "Grid bounds before indexing",
+      "Disconnected parts — start from every unvisited node",
+      "Recursion depth on large grids (use BFS or an explicit stack)",
     ],
     template: `queue<pair<int,int>> q;
 // push all starting cells, mark them visited
@@ -217,6 +253,12 @@ while (!q.empty()) {
       'Using a max-heap of everything for "k largest" instead of a min-heap of size k',
       'Re-sorting after every insertion in a stream',
     ],
+    edgeChecklist: [
+      "Min-heap vs max-heap (`greater<>` keeps the k largest)",
+      "Pop when the heap grows past k",
+      "Ties in the comparator",
+      "k larger than the input",
+    ],
     template: `priority_queue<int, vector<int>, greater<int>> minHeap;  // keeps k largest
 for (int x : nums) {
     minHeap.push(x);
@@ -244,6 +286,12 @@ return minHeap.top();   // k-th largest`,
       'Plain recursion without memoisation — exponential time (TLE)',
       'Greedy choices where a locally best step isn’t globally best',
       'Not defining exactly what dp[i] means before writing the recurrence',
+    ],
+    edgeChecklist: [
+      "Base cases (`dp[0]`, `dp[1]`)",
+      "Array size n + 1 when indexing by length",
+      "Order of the loop: build from smaller answers",
+      "Use `long long` for counts that grow fast",
     ],
     template: `vector<long long> dp(n + 1, 0);
 dp[0] = 1;                     // base case

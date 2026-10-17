@@ -65,6 +65,8 @@ export interface Problem {
   aiAnalysisMeta?: AIAnalysisMeta;
   /** Only on GET /api/problems/:id — the mapped pattern, or null. */
   pattern?: import('./pattern').ProblemPattern | null;
+  /** Only on GET /api/problems/:id — rule-based "what went wrong". */
+  diagnosis?: import('./pattern').Diagnosis;
   createdAt?: string;
   updatedAt?: string;
 }

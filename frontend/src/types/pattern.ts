@@ -75,3 +75,45 @@ export interface PredictionStats {
   perPattern: { key: string; attempts: number; correct: number; unsure: number; accuracy: number | null }[];
   confusions: { actual: string; actualName: string; predicted: string; predictedName: string; count: number }[];
 }
+
+/** See backend/services/diagnosisService.js. */
+export interface DiagnosisSignal {
+  type: string;
+  severity: 'high' | 'medium' | 'good';
+  title: string;
+  detail: string;
+}
+export interface Diagnosis {
+  status: 'clean' | 'solved-with-struggle' | 'stuck' | 'in-progress' | 'none';
+  attempts: number;
+  triesToAc?: number | null;
+  signals: DiagnosisSignal[];
+  checklist: string[];
+  reviewOn: string | null;
+  pattern: { key: string; name: string; complexity: string } | null;
+}
+
+export interface AiQuota { limit: number; used: number; remaining: number; resetsAt: string }
+
+export interface TutorAnswer {
+  id: string;
+  submissionId: string;
+  verdict: string | null;
+  pattern: { key: string; name: string } | null;
+  answer: {
+    diagnosis: 'wrong-pattern' | 'right-pattern-too-slow' | 'implementation-bug' | 'edge-case' | 'other';
+    summary: string;
+    nudge: string;
+    checks: string[];
+    patternTip: string;
+  };
+  createdAt: string;
+  cached?: boolean;
+  quota?: AiQuota;
+}
+
+export interface TutorState {
+  answers: TutorAnswer[];
+  failed: { submissionId: string; verdict: string; submittedAt: string }[];
+  quota: AiQuota;
+}

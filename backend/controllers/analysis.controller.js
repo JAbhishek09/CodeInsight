@@ -2,6 +2,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
+import { AiQuotaError, consumeAiQuota, refundAiQuota } from '../utils/aiQuota.js';
 
 // A 'pending' analysis older than this is assumed lost (e.g. server restart).
 const PENDING_STALE_MS = 3 * 60 * 1000;
@@ -102,6 +103,20 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
     });
   }
 
+  // Charge the student's daily AI limit (cached results above are free).
+  let usageId;
+  try {
+    ({ usageId } = await consumeAiQuota(userId, 'analysis'));
+  } catch (err) {
+    if (!(err instanceof AiQuotaError)) throw err;
+    await Problem.updateOne(
+      { _id: problem._id, aiAnalysisPendingHash: currentHash },
+      { $set: { aiAnalysisStatus: problem.aiAnalysis ? 'ready' : 'idle', aiAnalysisPendingHash: null, aiAnalysisPendingSince: null } }
+    );
+    res.status(429);
+    throw err;
+  }
+
   // Cache miss (status is 'idle', 'error', stale, or hash has changed) — call the LLM
   let parsed, hash;
   try {
@@ -113,6 +128,7 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
       language: latestWithCode.language,
     }));
   } catch (err) {
+    await refundAiQuota(usageId);
     await Problem.updateOne(
       { _id: problem._id, aiAnalysisPendingHash: currentHash },
       { $set: { aiAnalysisStatus: 'error', aiAnalysisError: err.message, aiAnalysisPendingHash: null, aiAnalysisPendingSince: null } }

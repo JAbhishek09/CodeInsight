@@ -10,6 +10,7 @@ import ProblemHeader from '@/components/problem/ProblemHeader';
 import AnalysisTab from '@/components/problem/AnalysisTab';
 import SubmissionsTab from '@/components/problem/SubmissionsTab';
 import CodeBlock from '@/components/problem/CodeBlock';
+import DiagnosisPanel from '@/components/problem/DiagnosisPanel';
 import { relativeTime } from '@/lib/format';
 import type { Submission } from '@/types/problem';
 
@@ -81,6 +82,8 @@ export default function ProblemPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6" id="problem-page">
       <ProblemHeader problem={problem} submissions={submissions} />
+
+      {problem.diagnosis && <DiagnosisPanel problemId={problem._id} diagnosis={problem.diagnosis} />}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="line" className="w-full justify-start gap-4 border-b border-border">

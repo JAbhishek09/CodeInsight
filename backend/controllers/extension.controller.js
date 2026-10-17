@@ -5,6 +5,7 @@ import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
 import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 import { resolveOnSubmission } from '../services/predictionService.js';
+import { tryConsumeAiQuota } from '../utils/aiQuota.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -217,7 +218,11 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
     const incomingHash = md5(code);
     const cachedHash = problem.aiAnalysis?.codeSnapshotHash;
 
-    if (!cachedHash || cachedHash !== incomingHash) {
+    if ((!cachedHash || cachedHash !== incomingHash) && !(await tryConsumeAiQuota(userId, 'background'))) {
+      // Over today's AI limit: keep the old analysis (it shows as out of date)
+      // and let the student run a review later.
+      aiMessage = 'Daily AI limit reached — run the review from CodeInsight later.';
+    } else if (!cachedHash || cachedHash !== incomingHash) {
       // Invalidate cached analysis and mark status as pending
       await Problem.findByIdAndUpdate(problem._id, {
         $set: {
