@@ -1,71 +1,180 @@
-import { useState, useEffect, useCallback } from 'react';
-import { getProblems, deleteProblem, updateProblem } from '../api/problems.api';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  createProblem,
+  deleteProblem,
+  getProblemById,
+  getProblems,
+  updateProblem,
+  type ProblemPayload,
+} from '../api/problems.api';
+import { triggerAnalysis } from '../api/analysis.api';
+import type { Problem, ProblemStatus } from '../types/problem';
 
-export interface Problem {
-  _id: string;
-  title: string;
-  url?: string;
-  difficulty: 'Easy' | 'Medium' | 'Hard' | 'Div1' | 'Div2' | 'Div3' | 'unrated';
-  status: 'Solved' | 'Attempted' | 'To Do';
-  category: string;
-  notes?: string;
-  timeComplexity?: string;
-  spaceComplexity?: string;
-  platform: 'leetcode' | 'codeforces' | 'manual';
-  createdAt?: string;
-  updatedAt?: string;
-  submissions?: any[];
-  tags?: string[];
-  aiAnalysis?: any;
-  aiAnalysisStatus?: 'idle' | 'pending' | 'ready' | 'error';
-}
+export type { Problem };
 
-interface Filters {
+export interface ProblemFilters {
   difficulty?: string;
   status?: string;
   platform?: string;
   search?: string;
 }
 
-export function useProblems(filters: Filters = {}) {
-  const [problems, setProblems] = useState<Problem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export const problemKeys = {
+  all: ['problems'] as const,
+  list: (params: Record<string, string> = {}) => ['problems', 'list', params] as const,
+  detail: (id: string) => ['problems', 'detail', id] as const,
+};
 
-  const fetchProblems = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      // Always pass params object (even if empty) — avoids undefined being passed to axios
-      const params: Record<string, string> = {};
-      if (filters.difficulty) params.difficulty = filters.difficulty;
-      if (filters.status) params.status = filters.status;
-      if (filters.platform) params.platform = filters.platform;
-      if (filters.search) params.search = filters.search;
-      const res = await getProblems(params);
-      setProblems(res?.data || []);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load problems');
-    } finally {
-      setLoading(false);
+/** Drop empty filter values so `{}` and `{ status: '' }` share a cache entry. */
+function toParams(filters: ProblemFilters): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) params[k] = v;
+  return params;
+}
+
+/** GET /problems with optional filters → Problem[]. */
+export function useProblemList(filters: ProblemFilters = {}) {
+  const params = toParams(filters);
+  return useQuery({
+    queryKey: problemKeys.list(params),
+    queryFn: async () => ((await getProblems(params))?.data ?? []) as Problem[],
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every tracked problem (no filters) — the source for dashboard/analytics/insights. */
+export function useAllProblems() {
+  return useProblemList();
+}
+
+/** A row from GET /api/problems?view=list — no code or analysis bodies. */
+export interface ProblemListItem {
+  _id: string;
+  title: string;
+  platform: string;
+  difficulty: string;
+  status: ProblemStatus;
+  tags: string[];
+  url?: string;
+  submissionCount: number;
+  acceptedCount: number;
+  hasCode: boolean;
+  hasAiAnalysis: boolean;
+  aiStatus: string;
+  aiIsStale: boolean;
+  latestVerdict: string | null;
+  latestLanguage: string | null;
+  lastSubmittedAt: string | null;
+  firstSolvedAt: string | null;
+}
+
+export interface ProblemListPage {
+  data: ProblemListItem[];
+  page: number;
+  limit: number;
+  total: number;
+}
+
+/** Lightweight, paginated problem list (GET /api/problems?view=list). */
+export function useProblemListView(params: Record<string, string | number> = {}) {
+  const qs = Object.fromEntries(Object.entries({ view: 'list', ...params }).map(([k, v]) => [k, String(v)]));
+  return useQuery({
+    queryKey: problemKeys.list(qs),
+    queryFn: async () => (await getProblems(qs)) as ProblemListPage,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** A 'pending' analysis older than this is a dead job (matches the backend). */
+export const ANALYSIS_STALE_PENDING_MS = 3 * 60 * 1000;
+
+function isAnalysisRunning(problem: Problem | null | undefined) {
+  const meta = problem?.aiAnalysisMeta;
+  if (meta?.status !== 'pending') return false;
+  const since = meta.pendingSince ? new Date(meta.pendingSince).getTime() : 0;
+  return Date.now() - since < ANALYSIS_STALE_PENDING_MS;
+}
+
+/** GET /problems/:id → the problem document. Polls while an AI analysis is running. */
+export function useProblem(id: string | undefined) {
+  return useQuery({
+    queryKey: problemKeys.detail(id ?? ''),
+    queryFn: async () => ((await getProblemById(id!))?.data ?? null) as Problem | null,
+    enabled: Boolean(id),
+    refetchInterval: (query) => (isAnalysisRunning(query.state.data) ? 4000 : false),
+  });
+}
+
+/**
+ * POST /analyze/:id. The problem query is the single source of truth: after the
+ * request it's refetched, and keeps polling while the backend reports 'pending'.
+ */
+export function useAnalyzeProblem(id: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => triggerAnalysis(id!),
+    onSettled: () => {
+      invalidateProblemData(qc);
+    },
+  });
+}
+
+/** Problems changed: refetch problem lists/details and every analytics view built from them. */
+function invalidateProblemData(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: problemKeys.all });
+  qc.invalidateQueries({ queryKey: ['analytics'] });
+  qc.invalidateQueries({ queryKey: ['patterns'] });
+  qc.invalidateQueries({ queryKey: ['practice'] });
+}
+
+/**
+ * Apply an edit to every cached problem list. Two shapes share the
+ * ['problems', 'list'] key: full arrays (Problem[]) and paged list views
+ * ({ data: ProblemListItem[], total, ... }).
+ */
+function patchCachedLists(
+  qc: ReturnType<typeof useQueryClient>,
+  fn: <T extends { _id: string }>(rows: T[]) => T[]
+) {
+  qc.setQueriesData<unknown>({ queryKey: ['problems', 'list'] }, (prev: unknown) => {
+    if (Array.isArray(prev)) return fn(prev as Problem[]);
+    if (prev && typeof prev === 'object' && Array.isArray((prev as ProblemListPage).data)) {
+      const page = prev as ProblemListPage;
+      const data = fn(page.data);
+      return { ...page, data, total: page.total - (page.data.length - data.length) };
     }
-  }, [filters.difficulty, filters.status, filters.platform, filters.search]);
+    return prev;
+  });
+}
 
-  useEffect(() => {
-    fetchProblems();
-  }, [fetchProblems]);
+export function useCreateProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ProblemPayload) => createProblem(payload),
+    onSuccess: () => invalidateProblemData(qc),
+  });
+}
 
-  const removeProblem = async (id: string) => {
-    await deleteProblem(id);
-    setProblems((prev) => prev.filter((p) => p._id !== id));
-  };
+export function useUpdateProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<ProblemPayload> | { status: ProblemStatus } }) =>
+      updateProblem(id, data as Partial<ProblemPayload>),
+    onSuccess: (_res, { id, data }) => {
+      // Patch cached lists immediately, then refetch in the background.
+      patchCachedLists(qc, (rows) => rows.map((p) => (p._id === id ? { ...p, ...data } : p)));
+      invalidateProblemData(qc);
+    },
+  });
+}
 
-  const toggleStatus = async (id: string, newStatus: 'Solved' | 'Attempted' | 'To Do') => {
-    await updateProblem(id, { status: newStatus });
-    setProblems((prev) =>
-      prev.map((p) => (p._id === id ? { ...p, status: newStatus } : p))
-    );
-  };
-
-  return { problems, loading, error, refetch: fetchProblems, removeProblem, toggleStatus };
+export function useDeleteProblem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteProblem(id),
+    onSuccess: (_res, id) => {
+      patchCachedLists(qc, (rows) => rows.filter((p) => p._id !== id));
+      invalidateProblemData(qc);
+    },
+  });
 }

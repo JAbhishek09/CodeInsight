@@ -2,6 +2,10 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
+import { AiQuotaError, consumeAiQuota, refundAiQuota } from '../utils/aiQuota.js';
+
+// A 'pending' analysis older than this is assumed lost (e.g. server restart).
+const PENDING_STALE_MS = 3 * 60 * 1000;
 
 /**
  * @desc    Trigger AI analysis for a problem (cache-aware, status-aware)
@@ -21,7 +25,7 @@ import { analyzeCode } from '../services/aiService.js';
  *
  * Fix: extension.controller now sets aiAnalysisStatus='pending' before starting
  * the background job.  This controller checks that field:
- *  - 'pending' → return HTTP 202 so the frontend can poll.
+ *  - 'pending' → return HTTP 202 so the frontend can poll (unless stale).
  *  - 'ready'   → check cache hash; return cached result if hash matches.
  *  - 'error'   → cache miss path; call LLM synchronously (user explicitly asked).
  *  - 'idle'    → cache miss path; call LLM synchronously.
@@ -35,10 +39,13 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
     throw new Error('Problem not found');
   }
 
-  // Find the most recent submission that has actual code
-  const latestWithCode = [...problem.submissions]
+  // Analyse the latest Accepted submission with code, falling back to the latest
+  // submission with code of any verdict. Same rule as aiAnalysisMeta.isStale
+  // (utils/aiMeta.js), so a fresh analysis is never reported as stale.
+  const withCode = [...problem.submissions]
     .sort((a, b) => b.submittedAt - a.submittedAt)
-    .find((s) => s.code?.trim().length > 0);
+    .filter((s) => s.code?.trim().length > 0);
+  const latestWithCode = withCode.find((s) => s.verdict === 'Accepted') ?? withCode[0];
 
   if (!latestWithCode) {
     res.status(400);
@@ -46,16 +53,6 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
       'No code available for this problem. ' +
       'LeetCode public API does not return code; provide a LEETCODE_SESSION cookie or add code manually.'
     );
-  }
-
-  // BUG-AI-001: If a background job is already in flight, tell the client to poll
-  // instead of firing a second parallel Gemini call.
-  if (problem.aiAnalysisStatus === 'pending') {
-    return res.status(202).json({
-      success: true,
-      pending: true,
-      message: 'AI analysis is being generated in the background. Please check back in a few seconds.',
-    });
   }
 
   // Cache check: if the same code was already analysed successfully, return cached result
@@ -73,28 +70,91 @@ export const triggerAnalysis = asyncHandler(async (req, res) => {
     });
   }
 
-  // Cache miss (status is 'idle', 'error', or hash has changed) — call the LLM
-  const { parsed, hash } = await analyzeCode({
-    problemTitle: problem.title,
-    problemLink: problem.url || '',
-    verdict: latestWithCode.verdict,
-    code: latestWithCode.code,
-    language: latestWithCode.language,
-  });
+  // BUG-AI-001: Atomically claim the analysis slot. If a job is already in flight
+  // (and not stale — e.g. lost to a server restart), tell the client to poll
+  // instead of firing a second parallel Gemini call.
+  const staleCutoff = new Date(Date.now() - PENDING_STALE_MS);
+  const claimed = await Problem.findOneAndUpdate(
+    {
+      _id: problem._id,
+      user: userId,
+      $or: [
+        { aiAnalysisStatus: { $ne: 'pending' } },
+        { aiAnalysisPendingSince: null },
+        { aiAnalysisPendingSince: { $lt: staleCutoff } },
+      ],
+    },
+    {
+      $set: {
+        aiAnalysisStatus: 'pending',
+        aiAnalysisError: null,
+        aiAnalysisPendingHash: currentHash,
+        aiAnalysisPendingSince: new Date(),
+      },
+    },
+    { new: true }
+  );
 
-  // Persist analysis and mark as ready
-  problem.aiAnalysis = {
-    ...parsed,
-    codeSnapshotHash: hash,
-    generatedAt: new Date(),
-  };
-  problem.aiAnalysisStatus = 'ready';
-  problem.aiAnalysisError = null;
-  await problem.save();
+  if (!claimed) {
+    return res.status(202).json({
+      success: true,
+      pending: true,
+      message: 'AI analysis is being generated in the background. Please check back in a few seconds.',
+    });
+  }
+
+  // Charge the student's daily AI limit (cached results above are free).
+  let usageId;
+  try {
+    ({ usageId } = await consumeAiQuota(userId, 'analysis'));
+  } catch (err) {
+    if (!(err instanceof AiQuotaError)) throw err;
+    await Problem.updateOne(
+      { _id: problem._id, aiAnalysisPendingHash: currentHash },
+      { $set: { aiAnalysisStatus: problem.aiAnalysis ? 'ready' : 'idle', aiAnalysisPendingHash: null, aiAnalysisPendingSince: null } }
+    );
+    res.status(429);
+    throw err;
+  }
+
+  // Cache miss (status is 'idle', 'error', stale, or hash has changed) — call the LLM
+  let parsed, hash;
+  try {
+    ({ parsed, hash } = await analyzeCode({
+      problemTitle: problem.title,
+      problemLink: problem.url || '',
+      verdict: latestWithCode.verdict,
+      code: latestWithCode.code,
+      language: latestWithCode.language,
+    }));
+  } catch (err) {
+    await refundAiQuota(usageId);
+    await Problem.updateOne(
+      { _id: problem._id, aiAnalysisPendingHash: currentHash },
+      { $set: { aiAnalysisStatus: 'error', aiAnalysisError: err.message, aiAnalysisPendingHash: null, aiAnalysisPendingSince: null } }
+    ).catch(() => {});
+    throw err;
+  }
+
+  // Persist analysis and mark as ready (no-op if a newer job superseded this one)
+  const aiAnalysis = { ...parsed, codeSnapshotHash: hash, generatedAt: new Date() };
+  const updated = await Problem.findOneAndUpdate(
+    { _id: problem._id, aiAnalysisPendingHash: currentHash },
+    {
+      $set: {
+        aiAnalysis,
+        aiAnalysisStatus: 'ready',
+        aiAnalysisError: null,
+        aiAnalysisPendingHash: null,
+        aiAnalysisPendingSince: null,
+      },
+    },
+    { new: true }
+  );
 
   res.status(200).json({
     success: true,
     fromCache: false,
-    analysis: problem.aiAnalysis,
+    analysis: updated?.aiAnalysis ?? aiAnalysis,
   });
 });

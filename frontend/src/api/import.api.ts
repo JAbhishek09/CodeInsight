@@ -1,6 +1,24 @@
 import api from './axiosInstance';
 
 /**
+ * Which LeetCode user a pasted session belongs to. Rejects (403) when it isn't
+ * the LeetCode user linked to this CodeInsight account.
+ */
+export const verifyLeetcodeSession = async (sessionCookie: string): Promise<{ username: string }> => {
+  const res = await api.post('/import/leetcode/verify-session', { sessionCookie });
+  return res.data;
+};
+
+/**
+ * Deletes every imported LeetCode problem for this account (Codeforces and
+ * manual entries are untouched).
+ */
+export const removeLeetcodeData = async (): Promise<{ deleted: number; message: string }> => {
+  const res = await api.delete('/import/leetcode');
+  return res.data;
+};
+
+/**
  * Phase 1A — Import full AC problem list.
  */
 export const importLeetcodeProblems = async (sessionCookie?: string) => {
@@ -24,19 +42,18 @@ export const importLeetcodeCode = async (sessionCookie: string, offset = 0) => {
 };
 
 /**
- * Phase 1C — Per-problem backfill.
- * For problems that still have submissions with empty code after Phase 1B,
- * fetches the best AC submission code directly via submissionDetails.
+ * Phase 1C — fetch code for each solved problem that still has none.
+ * Paged by an opaque cursor (the last processed problem id), not by skip —
+ * the set of problems missing code shrinks as they get filled.
  *
  * @param sessionCookie  LEETCODE_SESSION value
- * @param skip           Offset over Problem documents (not LeetCode pages)
- * @param limit          Problems to process per call (default 20)
+ * @param after          `nextCursor` from the previous call; omit for the first
  */
-export const backfillLeetcodeCode = async (sessionCookie: string, skip = 0, limit = 20) => {
-  const res = await api.post('/import/leetcode/backfill', { sessionCookie, skip, limit });
+export const backfillLeetcodeCode = async (sessionCookie: string, after?: string | null) => {
+  const res = await api.post('/import/leetcode/backfill', after ? { sessionCookie, after } : { sessionCookie });
   return res.data;
-  // Returns: { processed, backfilled, hasMore, nextSkip, message,
-  //            codeEnrichmentError? }
+  // Returns: { processed, filled, skipped, remaining, hasMore, nextCursor,
+  //            message, codeEnrichmentError? }
 };
 
 /**
@@ -45,6 +62,7 @@ export const backfillLeetcodeCode = async (sessionCookie: string, skip = 0, limi
  * written by the Chrome extension's live sync as well as any import passes.
  *
  * Returns: { totalProblems, acceptedSubmissions, acceptedWithCode, missingCode,
+ *            solvedProblems, solvedWithCode, missingCodeProblems,
  *            status: 'none' | 'partial' | 'mixed' | 'full' }
  */
 export const getCodeCoverageStatus = async () => {

@@ -1,10 +1,25 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import User from '../models/User.js';
+import Problem from '../models/Problem.js';
 import generateToken from '../utils/generateToken.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import bcrypt from 'bcrypt';
+
+/** Emails are stored lowercased and trimmed; match lookups to that. */
+const normalizeEmail = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : '');
+
+/** Pilot mode: when PILOT_INVITE_CODE is set, sign-up needs that code. */
+const inviteCode = () => (process.env.PILOT_INVITE_CODE || '').trim();
+
+/**
+ * @desc    What the sign-up screen needs to know
+ * @route   GET /api/auth/config
+ * @access  Public
+ */
+export const getAuthConfig = (req, res) => {
+  res.status(200).json({ success: true, data: { inviteRequired: Boolean(inviteCode()) } });
+};
 
 /**
  * @desc    Register a new user
@@ -12,13 +27,17 @@ import bcrypt from 'bcrypt';
  * @access  Public
  */
 export const registerUser = asyncHandler(async (req, res) => {
-  console.log('[REGISTER] Received request:', { body: req.body });
   
-  const { name, email, password, targetDailySolved } = req.body;
+  const { name, password, targetDailySolved, invite } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   if (!name || !email || !password) {
     res.status(400);
     throw new Error('Please include name, email, and password');
+  }
+  if (inviteCode() && String(invite ?? '').trim().toLowerCase() !== inviteCode().toLowerCase()) {
+    res.status(403);
+    throw new Error('That invite code isn’t right. Ask the person running the pilot for it.');
   }
 
   const userExists = await User.findOne({ email });
@@ -27,7 +46,6 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw new Error('A user already exists with this email address');
   }
 
-  console.log('[REGISTER] Creating user:', { name, email, targetDailySolved });
   
   const user = await User.create({
     name,
@@ -35,8 +53,6 @@ export const registerUser = asyncHandler(async (req, res) => {
     password,
     targetDailySolved: targetDailySolved ? Number(targetDailySolved) : 1,
   });
-
-  console.log('[REGISTER] User created successfully:', { id: user._id });
 
   if (user) {
     res.status(201).json({
@@ -64,7 +80,8 @@ export const registerUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   if (!email || !password) {
     res.status(400);
@@ -105,6 +122,39 @@ export const getMe = asyncHandler(async (req, res) => {
     success: true,
     data: req.user,
   });
+});
+
+/**
+ * @desc    Update the logged-in user's name and/or daily goal
+ * @route   PUT /api/auth/profile
+ * @access  Private
+ */
+export const updateProfile = asyncHandler(async (req, res) => {
+  const { name, targetDailySolved } = req.body ?? {};
+  const updates = {};
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 50) {
+      res.status(400);
+      throw new Error('Name must be between 1 and 50 characters.');
+    }
+    updates.name = name.trim();
+  }
+  if (targetDailySolved !== undefined) {
+    const n = Number(targetDailySolved);
+    if (!Number.isInteger(n) || n < 1 || n > 20) {
+      res.status(400);
+      throw new Error('Daily goal must be a whole number from 1 to 20.');
+    }
+    updates.targetDailySolved = n;
+  }
+  if (Object.keys(updates).length === 0) {
+    res.status(400);
+    throw new Error('Nothing to update.');
+  }
+
+  const user = await User.findByIdAndUpdate(req.user._id, { $set: updates }, { new: true }).select('-password');
+  res.status(200).json({ success: true, data: user });
 });
 
 export const forgotPassword = async (req, res) => {
@@ -169,7 +219,14 @@ export const forgotPassword = async (req, res) => {
 export const resetPassword = async (req, res) => {
   try {
     // 1. Get the token from the request body or URL params
-    const { token, newPassword } = req.body;
+    const { token, newPassword } = req.body ?? {};
+
+    if (typeof token !== 'string' || !token || typeof newPassword !== 'string') {
+      return res.status(400).json({ success: false, message: 'Reset token and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
 
     // 2. Hash the incoming token so we can compare it to the one in the database
     const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
@@ -184,9 +241,8 @@ export const resetPassword = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Token is invalid or has expired' });
     }
 
-    // 4. Hash the new password and save it
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    // 4. Set the new password — the User pre('save') hook hashes it
+    user.password = newPassword;
 
     // 5. CRITICAL: Clear out the reset fields so the token can never be used again
     user.resetPasswordToken = undefined;
@@ -248,6 +304,27 @@ export const saveHandles = asyncHandler(async (req, res) => {
         );
       }
       updateData.codeforcesHandle = parsed;
+    }
+  }
+
+  // One account = one LeetCode/Codeforces user. Switching to a different user
+  // while the old one's problems are still here would mix two people's data.
+  const current = await User.findById(req.user._id).select('leetcodeHandle codeforcesHandle');
+  const switches = [
+    ['leetcode', 'leetcodeHandle', 'LeetCode'],
+    ['codeforces', 'codeforcesHandle', 'Codeforces'],
+  ];
+  for (const [platform, field, label] of switches) {
+    const next = updateData[field];
+    const prev = current?.[field];
+    if (next === undefined || !prev || (next ?? '').toLowerCase() === prev.toLowerCase()) continue;
+    const existing = await Problem.countDocuments({ user: req.user._id, platform });
+    if (existing > 0) {
+      res.status(409);
+      throw new Error(
+        `Your account already has ${existing} problems from ${label} user "${prev}". ` +
+        `Remove that imported data first (Import → Remove imported data), then link a different user.`
+      );
     }
   }
 

@@ -3,6 +3,12 @@ import Problem from '../models/Problem.js';
 import Nonce from '../models/Nonce.js';
 import { md5 } from '../utils/hashCode.js';
 import { analyzeCode } from '../services/aiService.js';
+import { parseLeetcodeHandle } from '../utils/parseHandle.js';
+import { resolveOnSubmission } from '../services/predictionService.js';
+import { tryConsumeAiQuota } from '../utils/aiQuota.js';
+import { diagnoseProblem } from '../services/diagnosisService.js';
+import { scheduleReview } from '../services/reviewService.js';
+import User from '../models/User.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -53,6 +59,27 @@ async function checkAndConsumeNonce(nonce) {
  */
 export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   const userId = req.user._id;
+
+  // ── 0. Submission must come from this profile's LeetCode account ─────────────
+  // The extension reads the signed-in LeetCode username from LeetCode itself.
+  // Without this check, using LeetCode as someone else mixes their submissions
+  // into this account.
+  const handle = parseLeetcodeHandle(req.user.leetcodeHandle);
+  const lcUser = req.body?.leetcodeUsername;
+  if (!handle) {
+    res.status(400);
+    throw new Error('Set your LeetCode username in CodeInsight before syncing submissions.');
+  }
+  if (typeof lcUser !== 'string' || !lcUser) {
+    res.status(400);
+    throw new Error('Extension is out of date — reload the CodeInsight extension.');
+  }
+  if (lcUser.toLowerCase() !== handle.toLowerCase()) {
+    res.status(403);
+    throw new Error(`Submission is from LeetCode user "${lcUser}", but this account is linked to "${handle}".`);
+  }
+
+  await User.updateOne({ _id: userId }, { $set: { extensionSeenAt: new Date() } });
 
   // ── 1. Replay attack prevention (MongoDB-backed nonce) ───────────────────────
   const { _nonce, _ts } = req.body;
@@ -176,11 +203,13 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   if (!updateResult) {
     // The $ne filter didn't match — submissionId already in the array
     const existing = await Problem.findOne({ user: userId, platform: 'leetcode', platformProblemId: problemSlug });
+    const feedback = await resolveOnSubmission({ userId, slug: problemSlug, submissionId, verdict });
     return res.status(200).json({
       success: true,
       message: 'Submission already recorded.',
       duplicate: true,
       problemId: existing?._id,
+      feedback,
     });
   }
 
@@ -190,17 +219,28 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   let aiInvalidated = false;
   let aiMessage = 'AI cache unchanged';
 
-  if (verdict === 'Accepted') {
+  // Automatic AI reviews spend the shared AI allowance on every accepted
+  // submission; off unless AI_AUTO_REVIEW=true. Students can still run a
+  // review from the problem page (the old one shows as out of date).
+  if (verdict === 'Accepted' && process.env.AI_AUTO_REVIEW !== 'true') {
+    aiMessage = 'AI review available on demand in CodeInsight.';
+  } else if (verdict === 'Accepted') {
     const incomingHash = md5(code);
     const cachedHash = problem.aiAnalysis?.codeSnapshotHash;
 
-    if (!cachedHash || cachedHash !== incomingHash) {
+    if ((!cachedHash || cachedHash !== incomingHash) && !(await tryConsumeAiQuota(userId, 'background'))) {
+      // Over today's AI limit: keep the old analysis (it shows as out of date)
+      // and let the student run a review later.
+      aiMessage = 'Daily AI limit reached — run the review from CodeInsight later.';
+    } else if (!cachedHash || cachedHash !== incomingHash) {
       // Invalidate cached analysis and mark status as pending
       await Problem.findByIdAndUpdate(problem._id, {
         $set: {
           aiAnalysis: null,
           aiAnalysisStatus: 'pending',  // BUG-AI-001: signals background job is in flight
           aiAnalysisError: null,
+          aiAnalysisPendingHash: incomingHash,
+          aiAnalysisPendingSince: new Date(),
         },
       });
       aiInvalidated = true;
@@ -219,13 +259,27 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
     }
   }
 
-  // ── 6. Response ─────────────────────────────────────────────────────────────
+  // ── 6. Pattern feedback: close the student's guess for this problem ─────────
+  const feedback = await resolveOnSubmission({ userId, slug: problemSlug, submissionId, verdict });
+
+  // Hard-won accept (4+ tries) → re-solve it from scratch in a week
+  // (only on the first accept — re-solving later is the review itself)
+  const acceptedCount = (problem.submissions ?? []).filter((s) => s.verdict === 'Accepted').length;
+  if (verdict === 'Accepted' && acceptedCount === 1) {
+    const dx = diagnoseProblem(problem);
+    if (dx.status === 'solved-with-struggle' && dx.reviewOn) {
+      await scheduleReview(userId, problemSlug, 'struggle', dx.reviewOn);
+    }
+  }
+
+  // ── 7. Response ─────────────────────────────────────────────────────────────
   return res.status(201).json({
     success: true,
     message: 'Submission recorded successfully.',
     duplicate: false,
     aiInvalidated,
     aiMessage,
+    feedback,
     data: {
       problemId: problem._id,
       problemSlug,
@@ -239,10 +293,10 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
  * Run AI analysis in the background and persist result to MongoDB.
  * Called after the HTTP response has already been sent.
  *
- * BUG-INJ-004 FIX: The write is guarded by a codeSnapshotHash mismatch filter.
- * If two background jobs race (e.g. user submits twice rapidly), only the job
- * whose hash matches the latest ingested code will successfully write.  The
- * slower job for an older code snapshot will hit the $or filter and be a no-op.
+ * BUG-INJ-004 FIX: The write is guarded by aiAnalysisPendingHash. Each new
+ * ingest sets it to the hash of the code being analysed, so if two background
+ * jobs race (e.g. user submits twice rapidly), only the job for the latest
+ * code matches the filter. A slower job for older code is a no-op.
  *
  * BUG-AI-001 FIX: Sets aiAnalysisStatus to 'ready' on success, 'error' on
  * failure, so the analysis endpoint can check status before firing a second
@@ -260,19 +314,9 @@ async function runBackgroundAnalysis(problemId, userId, code, codeHash, problemT
       language,
     });
 
-    // BUG-INJ-004: Only write if the codeSnapshotHash in the DB is still the one
-    // we were asked to analyse (or if no analysis exists yet).  This prevents a
-    // slow job for older code from overwriting a faster job for newer code.
-    await Problem.findOneAndUpdate(
-      {
-        _id: problemId,
-        user: userId,
-        $or: [
-          { 'aiAnalysis.codeSnapshotHash': { $ne: hash } },
-          { 'aiAnalysis.codeSnapshotHash': { $exists: false } },
-          { aiAnalysis: null },
-        ],
-      },
+    // BUG-INJ-004: Only write if this job is still the latest one requested.
+    const written = await Problem.findOneAndUpdate(
+      { _id: problemId, user: userId, aiAnalysisPendingHash: codeHash },
       {
         $set: {
           aiAnalysis: {
@@ -282,18 +326,26 @@ async function runBackgroundAnalysis(problemId, userId, code, codeHash, problemT
           },
           aiAnalysisStatus: 'ready',   // BUG-AI-001
           aiAnalysisError: null,
+          aiAnalysisPendingHash: null,
+          aiAnalysisPendingSince: null,
         },
       }
     );
 
+    if (!written) {
+      console.log(`[Extension] Background AI analysis for problem ${problemId} superseded by newer code — discarded`);
+      return;
+    }
     console.log(`[Extension] Background AI analysis completed for problem ${problemId}`);
   } catch (err) {
     console.error(`[Extension] Background AI analysis failed for problem ${problemId}:`, err.message);
     // Mark as error so the frontend can surface a "retry" option (BUG-AI-001)
-    await Problem.findByIdAndUpdate(problemId, {
+    await Problem.findOneAndUpdate({ _id: problemId, aiAnalysisPendingHash: codeHash }, {
       $set: {
         aiAnalysisStatus: 'error',
         aiAnalysisError: err.message,
+        aiAnalysisPendingHash: null,
+        aiAnalysisPendingSince: null,
       },
     }).catch(e => console.error('[Extension] Could not persist AI error status:', e.message));
   }

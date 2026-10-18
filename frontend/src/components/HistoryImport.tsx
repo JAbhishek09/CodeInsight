@@ -1,6 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
-import { importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode, getCodeCoverageStatus, repairDifficultyAndTags } from '../api/import.api';
-import { Download, Code2, AlertCircle, CheckCircle2, ChevronRight, Eye, EyeOff, Loader2, RotateCcw, Wrench } from 'lucide-react';
+import {
+  importLeetcodeProblems, importLeetcodeCode, backfillLeetcodeCode, getCodeCoverageStatus,
+  repairDifficultyAndTags, verifyLeetcodeSession, removeLeetcodeData,
+} from '../api/import.api';
+import { useAuth } from '../hooks/useAuth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Download, AlertCircle, CheckCircle2, ChevronDown, Eye, EyeOff, Loader2,
+  Square, Tags, Trash2, ExternalLink, ShieldCheck,
+} from 'lucide-react';
 
 interface Props {
   historyImportStatus: 'none' | 'partial' | 'full';
@@ -9,554 +18,455 @@ interface Props {
   onImportComplete: () => void;
 }
 
-export default function HistoryImport({
-  historyImportStatus,
-  historyImportCount,
-  lastHistoryImportAt,
-  onImportComplete,
-}: Props) {
-  const [importingProblems, setImportingProblems] = useState(false);
-  const [problemResult, setProblemResult] = useState<string | null>(null);
-  const [problemError, setProblemError] = useState<string | null>(null);
+interface Coverage {
+  status: 'none' | 'partial' | 'mixed' | 'full';
+  totalProblems?: number;
+  solvedProblems?: number;
+  solvedWithCode?: number;
+  missingCodeProblems?: number;
+}
 
-  const [repairing, setRepairing] = useState(false);
-  const [repairResult, setRepairResult] = useState<string | null>(null);
-  const [repairError, setRepairError] = useState<string | null>(null);
+type Stage = 'idle' | 'verify' | 'list' | 'history' | 'code' | 'done';
+
+const STAGES: { key: Exclude<Stage, 'idle' | 'done'>; label: string }[] = [
+  { key: 'verify',  label: 'Check session' },
+  { key: 'list',    label: 'Solved problems' },
+  { key: 'history', label: 'Submission history' },
+  { key: 'code',    label: 'Code & tags' },
+];
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+export default function HistoryImport({ lastHistoryImportAt, onImportComplete }: Props) {
+  const { user } = useAuth() as any;
+  const handle: string | undefined = user?.leetcodeHandle ?? undefined;
 
   const [sessionCookie, setSessionCookie] = useState('');
-  const [showCookie, setShowCookie] = useState(false);
-  const [importingCode, setImportingCode] = useState(false);
-  const [codeError, setCodeError] = useState<string | null>(null);
-  const [codeComplete, setCodeComplete] = useState(false);
-  // Surfaces WHY code enrichment returned zeros (e.g. LeetCode WAF blocking
-  // the submissionDetails GraphQL call) instead of leaving that invisible.
-  const [enrichmentWarning, setEnrichmentWarning] = useState<string | null>(null);
+  const [showCookie, setShowCookie]       = useState(false);
+  const [showHelp, setShowHelp]           = useState(false);
+  const [showMore, setShowMore]           = useState(false);
 
-  // Phase 1B progress (global submission list)
-  const [phase, setPhase] = useState<'idle' | '1b' | '1c'>('idle');
-  const [currentOffset, setCurrentOffset] = useState(0);
-  const [totalFetched, setTotalFetched] = useState(0);
-  const [totalAttached, setTotalAttached] = useState(0);
-  const [totalBackfilled, setTotalBackfilled] = useState(0);
-  const [pagesProcessed, setPagesProcessed] = useState(0);
+  const [stage, setStage]             = useState<Stage>('idle');
+  const [verifiedAs, setVerifiedAs]   = useState<string | null>(null);
+  const [error, setError]             = useState<string | null>(null);
+  const [notice, setNotice]           = useState<string | null>(null);
+  const [scanned, setScanned]         = useState(0);
+  const [codeDone, setCodeDone]       = useState(0);
+  const [codeTotal, setCodeTotal]     = useState(0);
+  const [unavailable, setUnavailable] = useState(0);
 
-  // Phase 1C progress (per-problem backfill)
-  const [backfillTotal, setBackfillTotal] = useState(0);
-  const [backfillFilled, setBackfillFilled] = useState(0);
-  const [backfillSkipped, setBackfillSkipped] = useState(0);
-  const [backfillProcessed, setBackfillProcessed] = useState(0);
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
 
-  const abortRef = useRef(false);
+  const [busyAction, setBusyAction]     = useState<'tags' | 'remove' | null>(null);
+  const [actionResult, setActionResult] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
-  // Live code coverage — ground truth from MongoDB, not the static
-  // historyImportStatus prop (which doesn't know about extension-synced code).
-  const [coverage, setCoverage] = useState<{
-    status: 'none' | 'partial' | 'mixed' | 'full';
-    acceptedSubmissions: number;
-    acceptedWithCode: number;
-    missingCode: number;
-  } | null>(null);
-  const [coverageLoading, setCoverageLoading] = useState(true);
+  const abortRef   = useRef(false);
+  const mountedRef = useRef(true);
 
-  const refreshCoverage = async () => {
-    setCoverageLoading(true);
-    try {
-      const data = await getCodeCoverageStatus();
-      setCoverage(data);
-    } catch {
-      // Non-fatal — fall back to the static prop-based label below
-    } finally {
-      setCoverageLoading(false);
-    }
-  };
-
+  // Stop any in-flight import loop when the component unmounts (e.g. the
+  // ImportModal is closed mid-import) so it doesn't keep hammering LeetCode.
   useEffect(() => {
-    refreshCoverage();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortRef.current = true;
+    };
   }, []);
 
-  const handleImportProblems = async () => {
-    setImportingProblems(true);
-    setProblemResult(null);
-    setProblemError(null);
+  const refreshCoverage = async () => {
     try {
-      const data = await importLeetcodeProblems(sessionCookie.trim() || undefined);
-      setProblemResult(data.message);
-      onImportComplete();
-      refreshCoverage();
-    } catch (e: any) {
-      setProblemError(e.message || 'Import failed');
-    } finally {
-      setImportingProblems(false);
+      const data = await getCodeCoverageStatus();
+      if (mountedRef.current) setCoverage(data);
+    } catch {
+      // Non-fatal — the summary just stays hidden
     }
   };
 
-  // Retroactive fix for problems imported before the WAF-header fix, where
-  // difficulty and topic tags came back empty/null from LeetCode's GraphQL
-  // API and were silently stored that way (same root cause as the "No topic
-  // data yet" gap on the Analytics/AI Insights pages).
-  const handleRepairTags = async () => {
-    if (!sessionCookie.trim()) {
-      setRepairError('Paste your LEETCODE_SESSION cookie below (Step 2) first — this needs authenticated access.');
-      return;
-    }
-    setRepairing(true);
-    setRepairResult(null);
-    setRepairError(null);
-    try {
-      const data = await repairDifficultyAndTags(sessionCookie.trim());
-      setRepairResult(data.message);
-      onImportComplete();
-    } catch (e: any) {
-      setRepairError(e.message || 'Repair failed');
-    } finally {
-      setRepairing(false);
-    }
-  };
+  useEffect(() => { refreshCoverage(); }, []);
 
-  // Phase 1B: paginate via numeric offset (LeetCode's own cursor field was
-  // confirmed broken — {"has_next":true,"last_key":""} — so we no longer
-  // depend on it at all).
-  const runPhase1B = async (session: string): Promise<void> => {
-    setPhase('1b');
-    let offset = 0;
-    let fetched = 0, attached = 0, backfilled = 0, pages = 0;
-    let consecutiveAuthFailures = 0;
+  const running = stage !== 'idle' && stage !== 'done';
+  const session = sessionCookie.trim();
+
+  // ── Pass 1: full submission history (IDs, verdicts, code when LeetCode has it)
+  const runHistory = async () => {
+    let offset = 0, fetched = 0, pages = 0, authFailures = 0;
 
     while (!abortRef.current) {
-      setCurrentOffset(pages); // repurpose to show page count in UI
-
       let data;
       try {
         data = await importLeetcodeCode(session, offset);
-        consecutiveAuthFailures = 0; // reset on any success
+        authFailures = 0;
       } catch (err: any) {
-        const msg = err?.message || '';
-        const looksLikeAuthFailure = /expired|invalid|401|403/i.test(msg);
-
-        // KEY FIX: a 401/403 mid-run after many successful pages is very
-        // likely LeetCode's bot-detection reacting to request CADENCE, not
-        // an actually-expired cookie — the session worked moments ago.
-        // Back off hard and retry a few times before giving up and
-        // surfacing the "expired" error to the user.
-        if (looksLikeAuthFailure && consecutiveAuthFailures < 3) {
-          consecutiveAuthFailures += 1;
-          const backoffMs = 5000 * consecutiveAuthFailures; // 5s, 10s, 15s
-          console.warn(
-            `[Import 1B] Auth-like failure at offset ${offset} ` +
-            `(attempt ${consecutiveAuthFailures}/3) — likely rate-limit, ` +
-            `not real expiry. Backing off ${backoffMs}ms before retry.`
-          );
-          await new Promise(r => setTimeout(r, backoffMs));
-          continue; // retry the SAME offset, don't advance
+        // LeetCode throttles this endpoint with 403 after ~20 rapid pages even
+        // though the session is fine — back off and retry the same page.
+        if (/expired|invalid|401|403/i.test(err?.message || '') && authFailures < 3) {
+          authFailures += 1;
+          await sleep(5000 * authFailures);
+          continue;
         }
-        // Either not an auth-shaped error, or we've retried 3 times already —
-        // surface it for real now.
+        // Still blocked: stop the history scan and let the code pass (which
+        // uses other endpoints) fill what's missing, instead of failing.
+        if (pages > 0) {
+          setNotice(`LeetCode limited the history scan after ${fetched} submissions — continuing with per-problem code fetch.`);
+          return;
+        }
         throw err;
       }
 
-      fetched    += data.fetched    ?? 0;
-      attached   += data.attached   ?? 0;
-      backfilled += data.backfilled ?? 0;
-      pages      += 1;
+      fetched += data.fetched ?? 0;
+      pages   += 1;
+      if (mountedRef.current) setScanned(fetched);
 
-      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
+      if (!data.hasMore) return;
+      const next = data.nextOffset ?? offset + 20;
+      if (next <= offset) return;
+      offset = next;
 
-      setTotalFetched(fetched);
-      setTotalAttached(attached);
-      setTotalBackfilled(backfilled);
-      setPagesProcessed(pages);
-
-      if (!data.hasMore) break;
-      const previousOffset = offset;
-      offset = data.nextOffset ?? offset + 20;
-
-      // GUARD: if the offset genuinely didn't advance (defensive backstop —
-      // should no longer trigger now that we don't depend on LeetCode's
-      // broken cursor field, but better to fail loudly than loop forever).
-      if (offset <= previousOffset) {
-        throw new Error(
-          `Pagination didn't advance past offset ${previousOffset} after ${pages} fetches. ` +
-          `Only your most recent ${fetched} submissions were scanned.`
-        );
-      }
-      // KEY FIX: slower base delay (1500ms instead of 500ms) plus randomized
-      // jitter (±40%) so the request cadence doesn't look like a uniform
-      // bot loop to LeetCode's WAF. At ~15 pages for 300 submissions this
-      // adds roughly 15-25s total, which is a worthwhile trade against the
-      // import dying partway through and reporting a false "session expired".
-      const baseDelay = 1500;
-      const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1); // ±40%
-      await new Promise(r => setTimeout(r, baseDelay + jitter));
+      // Jittered delay so the cadence doesn't look like a uniform bot loop
+      await sleep(800 + 800 * 0.4 * (Math.random() * 2 - 1));
     }
   };
 
-  // Phase 1C: per-problem backfill for problems still missing code after 1B
-  // Each call handles `limit` problems; we paginate by `skip` until hasMore=false.
-  const runPhase1C = async (session: string): Promise<void> => {
-    setPhase('1c');
-    setBackfillTotal(0);
-    setBackfillFilled(0);
-    setBackfillSkipped(0);
-    setBackfillProcessed(0);
-
-    let skip = 0;
-    let totalFilled = 0, totalSkipped = 0, totalProcessed = 0;
+  // ── Pass 2: code for every solved problem still missing it (+ tags)
+  const runCode = async () => {
+    let cursor: string | null = null;
+    let done = 0, missing = 0, failures = 0;
 
     while (!abortRef.current) {
-      const data = await backfillLeetcodeCode(session, skip, 20);
+      let data;
+      try {
+        data = await backfillLeetcodeCode(session, cursor);
+        failures = 0;
+      } catch (err: any) {
+        // One failed batch (timeout, LeetCode hiccup) shouldn't end the import
+        failures += 1;
+        if (failures > 3) throw err;
+        await sleep(5000 * failures);
+        continue;
+      }
 
-      if (data.codeEnrichmentError) setEnrichmentWarning(data.codeEnrichmentError);
-
-      totalFilled    += data.filled    ?? 0;
-      totalSkipped   += data.skipped   ?? 0;
-      totalProcessed += data.processed ?? 0;
-
-      setBackfillTotal(data.total ?? 0);
-      setBackfillFilled(totalFilled);
-      setBackfillSkipped(totalSkipped);
-      setBackfillProcessed(totalProcessed);
-
-      if (!data.hasMore) break;
-      skip = data.nextSkip ?? skip + 20;
-
-      // Slightly longer pause in 1C — each iteration makes 2× LC requests per problem
-      await new Promise(r => setTimeout(r, 600));
+      done    += data.processed ?? 0;
+      missing += data.skipped   ?? 0;
+      if (mountedRef.current) {
+        setCodeDone(done);
+        setCodeTotal(done + (data.remaining ?? 0));
+        setUnavailable(missing);
+      }
+      if (!data.hasMore || !data.nextCursor) return;
+      cursor = data.nextCursor;
+      await sleep(300);
     }
   };
 
-  const handleImportCode = async () => {
-    if (!sessionCookie.trim()) {
-      setCodeError('Please paste your LEETCODE_SESSION cookie first.');
+  const handleImport = async () => {
+    if (!session) {
+      setError('Paste your LEETCODE_SESSION first.');
       return;
     }
-
-    setImportingCode(true);
-    setCodeError(null);
-    setCodeComplete(false);
-    setCurrentOffset(0);
-    setTotalFetched(0);
-    setTotalAttached(0);
-    setTotalBackfilled(0);
-    setPagesProcessed(0);
-    setBackfillTotal(0);
-    setBackfillFilled(0);
-    setBackfillSkipped(0);
-    setBackfillProcessed(0);
-    setEnrichmentWarning(null);
     abortRef.current = false;
-
-    const session = sessionCookie.trim();
+    setError(null); setNotice(null); setActionResult(null);
+    setScanned(0); setCodeDone(0); setCodeTotal(0); setUnavailable(0);
 
     try {
-      // Phase 1B — global submission list (fast, covers recent ~1080 submissions)
-      await runPhase1B(session);
+      setStage('verify');
+      const { username } = await verifyLeetcodeSession(session);
+      if (!mountedRef.current) return;
+      setVerifiedAs(username);
 
-      // Phase 1C — per-problem fetch for any problems still with empty submissions
-      // (covers all historically old problems that 1B's global window missed)
-      if (!abortRef.current) {
-        await runPhase1C(session);
-      }
+      if (abortRef.current) return;
+      setStage('list');
+      await importLeetcodeProblems(session);
 
-      setCodeComplete(true);
+      if (abortRef.current) return;
+      setStage('history');
+      await runHistory();
+
+      if (abortRef.current) return;
+      setStage('code');
+      await runCode();
+
+      if (!mountedRef.current) return;
+      setStage(abortRef.current ? 'idle' : 'done');
       onImportComplete();
-      refreshCoverage();
     } catch (e: any) {
-      setCodeError(e.message || 'Code import failed');
+      if (!mountedRef.current) return;
+      setError(e.message || 'Import failed');
+      setStage('idle');
     } finally {
-      setImportingCode(false);
-      setPhase('idle');
+      if (mountedRef.current) refreshCoverage();
     }
   };
 
   const handleStop = () => {
     abortRef.current = true;
+    setStage('idle');
   };
 
-  const handleReset = () => {
-    setCodeComplete(false);
-    setCodeError(null);
-    setPhase('idle');
-    setCurrentOffset(0);
-    setTotalFetched(0);
-    setTotalAttached(0);
-    setTotalBackfilled(0);
-    setPagesProcessed(0);
-    setBackfillTotal(0);
-    setBackfillFilled(0);
-    setBackfillSkipped(0);
-    setBackfillProcessed(0);
+  const handleRefreshTags = async () => {
+    if (!session) {
+      setError('Paste your LEETCODE_SESSION first — refreshing tags needs it.');
+      return;
+    }
+    setBusyAction('tags'); setError(null); setActionResult(null);
+    try {
+      const data = await repairDifficultyAndTags(session);
+      setActionResult(data.message);
+      onImportComplete();
+    } catch (e: any) {
+      setError(e.message || 'Could not refresh tags');
+    } finally {
+      setBusyAction(null);
+    }
   };
 
-  const statusLabel: Record<string, string> = {
-    none:    'Not started',
-    partial: 'Problems imported (no code)',
-    mixed:   'Some code missing',
-    full:    'Full import complete',
+  const handleRemove = async () => {
+    if (!confirmRemove) { setConfirmRemove(true); return; }
+    setBusyAction('remove'); setError(null); setActionResult(null); setConfirmRemove(false);
+    try {
+      const data = await removeLeetcodeData();
+      setActionResult(data.message);
+      setStage('idle');
+      onImportComplete();
+      refreshCoverage();
+    } catch (e: any) {
+      setError(e.message || 'Could not remove data');
+    } finally {
+      setBusyAction(null);
+    }
   };
 
-  // Prefer the live, ground-truth coverage status. Fall back to the static
-  // historyImportStatus prop only while coverage is still loading.
-  const effectiveStatus = coverageLoading ? historyImportStatus : (coverage?.status ?? historyImportStatus);
-  const coverageDetail = coverage && coverage.acceptedSubmissions > 0
-    ? `${coverage.acceptedWithCode}/${coverage.acceptedSubmissions} submissions have code`
-    : null;
+  // ── Derived display values
+  const solved     = coverage?.solvedProblems ?? 0;
+  const withCode   = coverage?.solvedWithCode ?? 0;
+  const pct        = solved > 0 ? Math.floor((withCode / solved) * 100) : 0;
+  const hasData    = (coverage?.totalProblems ?? 0) > 0;
+  const stageIndex = STAGES.findIndex(s => s.key === stage);
+
+  const stageDetail =
+    stage === 'verify'  ? 'Checking the session belongs to your LeetCode account…' :
+    stage === 'list'    ? 'Loading your solved problems…' :
+    stage === 'history' ? `${scanned.toLocaleString()} submissions scanned` :
+    stage === 'code'    ? (codeTotal > 0 ? `${codeDone} of ${codeTotal} problems checked` : 'Filling in tags and missing code…') :
+    '';
 
   return (
-    <div className="bg-[#0b0e14] border border-slate-900 rounded-2xl p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-950 pb-4">
-        <div className="flex items-center gap-2">
-          <Download className="w-4 h-4 text-indigo-400" />
-          <h3 className="text-sm font-bold text-slate-100">Import LeetCode History</h3>
-        </div>
-        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
-          effectiveStatus === 'full'    ? 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20' :
-          effectiveStatus === 'mixed'   ? 'text-orange-400  border-orange-500/30   bg-orange-950/20'  :
-          effectiveStatus === 'partial' ? 'text-yellow-400  border-yellow-500/30  bg-yellow-950/20'  :
-                                              'text-slate-500   border-slate-800       bg-slate-900/40'
-        }`}>
-          {statusLabel[effectiveStatus] ?? 'Unknown'}
-        </span>
-      </div>
+    <section className="relative overflow-hidden rounded-lg border border-border bg-surface-1">
 
-      {coverageDetail && (
-        <p className="text-[11px] font-mono text-slate-500">{coverageDetail}</p>
-      )}
-
-      {historyImportCount > 0 && lastHistoryImportAt && (
-        <p className="text-[11px] font-mono text-slate-500">
-          Last run: {new Date(lastHistoryImportAt).toLocaleString()} · {historyImportCount} problems
-        </p>
-      )}
-
-      {/* ── Step 1 ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start gap-3">
-        <div className="w-5 h-5 rounded-full bg-indigo-950/50 border border-indigo-500/30 flex items-center justify-center shrink-0 mt-0.5">
-          <span className="text-[10px] font-bold text-indigo-400">1</span>
-        </div>
-        <div className="flex-1 space-y-2">
-          <p className="text-xs font-semibold text-slate-200">Import Solved Problems</p>
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            Fetches your accepted problems — title, difficulty, and topic tags.
-            Paste your <code className="text-purple-400 bg-purple-950/30 px-1 rounded">LEETCODE_SESSION</code> in Step 2 first for your <strong className="text-slate-400">complete history</strong>.
-          </p>
-          <div className="flex items-center gap-3 flex-wrap">
-            <button
-              onClick={handleImportProblems}
-              disabled={importingProblems}
-              className="flex items-center gap-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-all"
-            >
-              {importingProblems ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Download className="w-3.5 h-3.5" /> Import Problem List</>}
-            </button>
-            <button
-              onClick={handleRepairTags}
-              disabled={repairing}
-              title="Re-fetches real difficulty and topic tags for problems already imported — fixes 'No topic data' on Analytics/AI Insights."
-              className="flex items-center gap-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-slate-400 hover:text-slate-200 border border-slate-800 px-4 py-2 rounded-lg transition-all"
-            >
-              {repairing ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Repairing…</> : <><Wrench className="w-3.5 h-3.5" /> Fix Missing Tags/Difficulty</>}
-            </button>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="p-5 sm:p-6 border-b border-[var(--border)]">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-warning/10 border border-warning/20 flex items-center justify-center shrink-0">
+              <Download className="w-4.5 h-4.5 text-warning" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-extrabold text-[var(--foreground)]">Import from LeetCode</h3>
+              <p className="text-xs text-[var(--text-secondary)] truncate">
+                Linked account: <span className="font-semibold text-[var(--foreground)]">{handle ?? '—'}</span>
+              </p>
+            </div>
           </div>
-          {problemResult && (
-            <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{problemResult}</span>
-            </div>
-          )}
-          {problemError && (
-            <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{problemError}</span>
-            </div>
-          )}
-          {repairResult && (
-            <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{repairResult}</span>
-            </div>
-          )}
-          {repairError && (
-            <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{repairError}</span>
-            </div>
+          {lastHistoryImportAt && (
+            <span className="text-[11px] text-[var(--text-muted)]">
+              Last import {new Date(lastHistoryImportAt).toLocaleDateString()}
+            </span>
           )}
         </div>
+
+        {/* Coverage summary */}
+        {hasData && (
+          <div className="mt-5">
+            <div className="flex items-baseline justify-between gap-3 mb-2">
+              <p className="text-xs text-[var(--text-secondary)]">
+                <span className="text-lg font-extrabold text-[var(--foreground)] mr-1">{withCode}</span>
+                of {solved} solved problems have code
+              </p>
+              <span className={`text-xs font-bold ${pct === 100 ? 'text-success' : 'text-[var(--text-secondary)]'}`}>{pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-[var(--surface-3)] overflow-hidden">
+              <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* ── Step 2 ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start gap-3">
-        <div className="w-5 h-5 rounded-full bg-purple-950/50 border border-purple-500/30 flex items-center justify-center shrink-0 mt-0.5">
-          <span className="text-[10px] font-bold text-purple-400">2</span>
-        </div>
-        <div className="flex-1 space-y-3">
-          <p className="text-xs font-semibold text-slate-200">Import Submission Code <span className="text-slate-600 font-normal">(optional)</span></p>
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            Fetches source code for all your submissions — required for AI analysis.
-            Runs two passes: a fast global scan then a per-problem pass for older history.
-            May take 3–8 minutes for large histories.
-          </p>
-
-          <details className="text-[11px] text-slate-500 cursor-pointer">
-            <summary className="hover:text-slate-300 transition-colors flex items-center gap-1">
-              <ChevronRight className="w-3 h-3" /> How to get your LEETCODE_SESSION cookie
-            </summary>
-            <ol className="mt-2 ml-4 space-y-1 list-decimal list-outside">
-              <li>Open <a href="https://leetcode.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">leetcode.com</a> and log in.</li>
-              <li>Press <kbd className="bg-slate-900 px-1 rounded">F12</kbd> → Application → Cookies → https://leetcode.com</li>
-              <li>Copy the value of <strong className="text-slate-400">LEETCODE_SESSION</strong>.</li>
-            </ol>
-          </details>
-
+      <div className="p-5 sm:p-6 space-y-5">
+        {/* ── Session input ─────────────────────────────────────────────────── */}
+        <div className="space-y-2">
+          <label htmlFor="lc-session" className="block text-xs font-bold text-[var(--foreground)]">
+            Your LeetCode session
+          </label>
           <div className="relative">
-            <input
+            <Input
+              id="lc-session"
               type={showCookie ? 'text' : 'password'}
-              placeholder="Paste LEETCODE_SESSION value here…"
+              placeholder="Paste the LEETCODE_SESSION value"
               value={sessionCookie}
-              onChange={(e) => setSessionCookie(e.target.value)}
-              disabled={importingCode}
-              className="w-full bg-[#05070a] border border-slate-900 rounded-xl px-4 py-2.5 pr-10 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500/60 font-mono transition-all disabled:opacity-50"
+              onChange={(e) => { setSessionCookie(e.target.value); setVerifiedAs(null); setError(null); }}
+              disabled={running}
+              className="pr-10 font-mono"
               autoComplete="off"
+              spellCheck={false}
             />
-            <button type="button" onClick={() => setShowCookie(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400" tabIndex={-1}>
-              {showCookie ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <button
+              type="button"
+              onClick={() => setShowCookie(v => !v)}
+              aria-label={showCookie ? 'Hide session' : 'Show session'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--foreground)]"
+            >
+              {showCookie ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
 
-          <div className="flex items-center gap-3">
-            {!importingCode ? (
-              <button
-                onClick={handleImportCode}
-                disabled={!sessionCookie.trim()}
-                className="flex items-center gap-2 text-xs font-bold bg-purple-700 hover:bg-purple-600 disabled:opacity-40 text-white px-4 py-2 rounded-lg transition-all"
-              >
-                <Code2 className="w-3.5 h-3.5" />
-                {codeComplete ? 'Re-import All Code' : 'Import All Submission Code'}
-              </button>
-            ) : (
-              <button
-                onClick={handleStop}
-                className="flex items-center gap-2 text-xs font-bold bg-red-800 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-all"
-              >
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Stop
-              </button>
-            )}
-            {(codeComplete || (!importingCode && pagesProcessed > 0)) && (
-              <button onClick={handleReset} className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                <RotateCcw className="w-3 h-3" /> Reset
-              </button>
-            )}
+          {verifiedAs && (
+            <p className="flex items-center gap-1.5 text-[11px] text-success">
+              <ShieldCheck className="w-3.5 h-3.5" /> Session belongs to <span className="font-bold">{verifiedAs}</span>
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowHelp(v => !v)}
+            aria-expanded={showHelp}
+            className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--foreground)]"
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showHelp ? 'rotate-180' : ''}`} />
+            Where do I find this?
+          </button>
+          {showHelp && (
+            <ol className="text-[11px] text-[var(--text-secondary)] space-y-1.5 bg-[var(--surface-2)] border border-[var(--border)] rounded-xl p-3.5 list-decimal list-inside">
+              <li>
+                Open{' '}
+                <a href="https://leetcode.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">
+                  leetcode.com <ExternalLink className="w-3 h-3" />
+                </a>{' '}
+                and sign in as <span className="font-semibold">{handle}</span>.
+              </li>
+              <li>Press <kbd className="px-1 rounded bg-[var(--surface-3)]">F12</kbd> → <b>Application</b> → <b>Cookies</b> → https://leetcode.com.</li>
+              <li>Copy the <b>Value</b> of <span className="">LEETCODE_SESSION</span> and paste it above.</li>
+              <li className="list-none text-[var(--text-muted)] pt-1">It's only used for this import and isn't saved.</li>
+            </ol>
+          )}
+        </div>
+
+        {/* ── Primary action ────────────────────────────────────────────────── */}
+        {!running ? (
+          <Button onClick={handleImport} disabled={!session || busyAction !== null} size="lg" className="w-full">
+            <Download />
+            {hasData ? 'Update my LeetCode history' : 'Import my LeetCode history'}
+          </Button>
+        ) : (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-4" aria-live="polite">
+            {/* Stepper */}
+            <ol className="grid grid-cols-4 gap-2">
+              {STAGES.map((s, i) => {
+                const state = i < stageIndex ? 'done' : i === stageIndex ? 'active' : 'todo';
+                return (
+                  <li key={s.key} className="space-y-1.5">
+                    <div className={`h-1 rounded-full ${
+                      state === 'done' ? 'bg-success' : state === 'active' ? 'bg-primary animate-pulse' : 'bg-[var(--surface-3)]'
+                    }`} />
+                    <p className={`text-[10px] leading-tight ${
+                      state === 'todo' ? 'text-[var(--text-muted)]' : 'text-[var(--foreground)] font-semibold'
+                    }`}>{s.label}</p>
+                  </li>
+                );
+              })}
+            </ol>
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="flex items-center gap-2 text-xs text-[var(--text-secondary)] min-w-0">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+                <span className="truncate">{stageDetail}</span>
+              </p>
+              <Button variant="outline" size="sm" onClick={handleStop} className="shrink-0">
+                <Square /> Stop
+              </Button>
+            </div>
+            <p className="text-[10px] text-[var(--text-muted)]">
+              Large histories take a few minutes. Keep this window open until it finishes.
+            </p>
           </div>
+        )}
 
-          {/* Live progress */}
-          {importingCode && (
-            <div className="bg-slate-900/60 border border-slate-800 rounded-lg p-3 space-y-3">
+        {/* ── Messages ──────────────────────────────────────────────────────── */}
+        {stage === 'done' && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-success/20 bg-success/5 p-3.5 text-xs text-success">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-bold">Import complete</p>
+              <p className="text-[var(--text-secondary)]">
+                {scanned.toLocaleString()} submissions scanned
+                {solved > 0 && <> · {withCode} of {solved} solved problems have code</>}
+                {unavailable > 0 && <> · {unavailable} have no accepted solution on LeetCode</>}
+              </p>
+            </div>
+          </div>
+        )}
+        {notice && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-warning/20 bg-warning/5 p-3.5 text-xs text-warning">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{notice}</span>
+          </div>
+        )}
+        {actionResult && (
+          <div className="flex items-start gap-2.5 rounded-xl border border-success/20 bg-success/5 p-3.5 text-xs text-success">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" /><span>{actionResult}</span>
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-danger/20 bg-danger/5 p-3.5 text-xs text-danger">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" /><span>{error}</span>
+          </div>
+        )}
 
-              {/* Phase 1B */}
-              <div>
-                <div className="flex items-center gap-2 text-[11px] font-mono mb-1.5">
-                  {phase === '1b' ? (
-                    <><Loader2 className="w-3 h-3 animate-spin text-purple-400" />
-                    <span className="text-purple-400">Pass 1 — recent history (page {currentOffset + 1})</span></>
-                  ) : (
-                    <><CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    <span className="text-emerald-400">Pass 1 — complete ({pagesProcessed} pages)</span></>
-                  )}
+        {/* ── More options ──────────────────────────────────────────────────── */}
+        <div className="border-t border-[var(--border)] pt-4">
+          <button
+            type="button"
+            onClick={() => { setShowMore(v => !v); setConfirmRemove(false); }}
+            aria-expanded={showMore}
+            className="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--foreground)]"
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+            More options
+          </button>
+
+          {showMore && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] p-3.5">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[var(--foreground)]">Refresh tags & difficulty</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">Re-fetch topic tags and difficulty for every problem. Needs the session above.</p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <div className="text-sm font-bold text-slate-200">{totalFetched}</div>
-                    <div className="text-[10px] text-slate-500">fetched</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-emerald-400">{totalAttached}</div>
-                    <div className="text-[10px] text-slate-500">new</div>
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-indigo-400">{totalBackfilled}</div>
-                    <div className="text-[10px] text-slate-500">updated</div>
-                  </div>
-                </div>
+                <Button variant="outline" size="sm" onClick={handleRefreshTags} disabled={running || busyAction !== null} className="shrink-0">
+                  {busyAction === 'tags' ? <Loader2 className="animate-spin" /> : <Tags />}
+                  Refresh
+                </Button>
               </div>
 
-              {/* Phase 1C */}
-              {(phase === '1c' || backfillProcessed > 0) && (
-                <div className="border-t border-slate-800 pt-3">
-                  <div className="flex items-center gap-2 text-[11px] font-mono mb-1.5">
-                    {phase === '1c' ? (
-                      <><Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
-                      <span className="text-indigo-400">Pass 2 — older history ({backfillProcessed}/{backfillTotal} problems)</span></>
-                    ) : (
-                      <><CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">Pass 2 — complete</span></>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="text-sm font-bold text-slate-200">{backfillProcessed}</div>
-                      <div className="text-[10px] text-slate-500">checked</div>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-emerald-400">{backfillFilled}</div>
-                      <div className="text-[10px] text-slate-500">filled</div>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-slate-500">{backfillSkipped}</div>
-                      <div className="text-[10px] text-slate-500">no AC</div>
-                    </div>
-                  </div>
-                  {backfillTotal > 0 && (
-                    <div className="mt-2 h-1 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-500 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.round((backfillProcessed / backfillTotal) * 100)}%` }}
-                      />
-                    </div>
-                  )}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-danger/20 p-3.5">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-danger">Remove imported LeetCode data</p>
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    Deletes all LeetCode problems, code and analysis from this account. Codeforces and manual entries stay.
+                  </p>
                 </div>
-              )}
-
-              <p className="text-[10px] text-slate-600 text-center">Do not close this tab</p>
-            </div>
-          )}
-
-          {/* Final result */}
-          {codeComplete && !importingCode && (
-            <div className="flex items-start gap-2 bg-emerald-950/20 border border-emerald-500/20 rounded-lg p-3 text-[11px] font-mono text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>
-                Import complete — {pagesProcessed} pages (recent) + {backfillProcessed} problems (older history).{' '}
-                {totalAttached + backfillFilled} submissions now have code.
-              </span>
-            </div>
-          )}
-
-          {codeError && (
-            <div className="flex items-start gap-2 bg-red-950/20 border border-red-500/20 rounded-lg p-3 text-[11px] font-mono text-red-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{codeError}</span>
-            </div>
-          )}
-
-          {enrichmentWarning && !codeError && (
-            <div className="flex items-start gap-2 bg-yellow-950/20 border border-yellow-500/20 rounded-lg p-3 text-[11px] font-mono text-yellow-400">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>Code fetch is silently failing: {enrichmentWarning}</span>
+                <button
+                  onClick={handleRemove}
+                  disabled={running || busyAction !== null || !hasData}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg shrink-0 font-semibold disabled:opacity-40 transition-colors ${
+                    confirmRemove ? 'bg-danger text-on-solid hover:bg-danger/90' : 'border border-danger/30 text-danger hover:bg-danger/10'
+                  }`}
+                >
+                  {busyAction === 'remove' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  {confirmRemove ? 'Click again to confirm' : 'Remove'}
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
-
-      {/* ── Step 3 ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-start gap-3 border-t border-slate-950 pt-4">
-        <div className="w-5 h-5 rounded-full bg-pink-950/50 border border-pink-500/30 flex items-center justify-center shrink-0 mt-0.5">
-          <span className="text-[10px] font-bold text-pink-400">3</span>
-        </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-200">Install the Extension for Future Syncing</p>
-          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-            After the one-time import, install the CodeInsight Chrome extension.
-            It captures every future submission automatically — no manual sync needed.
-          </p>
-        </div>
-      </div>
-    </div>
+    </section>
   );
 }

@@ -1,58 +1,54 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { ProblemsPage } from './pages/ProblemsPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage'; 
-// (Adjust the path if you saved them in a different folder!)
-import ProfilePage from './pages/ProfilePage';
-import AnalysisPage from './pages/AnalysisPage';
-import ProblemDetailPage from './pages/ProblemDetailPage';
-import InsightsPage from './pages/InsightsPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import Navbar from './components/Navbar';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import AppShell from './components/layout/AppShell';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/queryClient';
+import { TooltipProvider } from './components/ui/tooltip';
+import { Toaster } from './components/ui/sonner';
 
-// Shared authenticated shell — uses CSS vars so it adapts to dark/light mode.
+// Signed-in pages load on demand so the sign-in screen (and each page) ships
+// only the code it needs — the charts library is the bulk of it.
+const HomePage = lazy(() => import('./pages/HomePage'));
+const ProblemsPage = lazy(() => import('./pages/ProblemsPage').then((m) => ({ default: m.ProblemsPage })));
+const ProblemPage = lazy(() => import('./pages/ProblemPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const PatternsPage = lazy(() => import('./pages/PatternsPage'));
+const PatternDetailPage = lazy(() => import('./pages/PatternDetailPage'));
+const DrillPage = lazy(() => import('./pages/DrillPage'));
+
+// Old /analysis/:id links now live on the problem page's AI analysis tab.
+function AnalysisRedirect() {
+  const { problemId } = useParams<{ problemId: string }>();
+  return <Navigate to={`/problems/${problemId}?tab=analysis`} replace />;
+}
+
+// Signed-in pages share the app shell (sidebar / mobile tabs).
 function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-app text-primary transition-colors duration-200">
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 page-enter">
+    <AppShell>
+      <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-surface-1" aria-busy="true" aria-label="Loading page" />}>
         {children}
-      </main>
-    </div>
+      </Suspense>
+    </AppShell>
   );
 }
 
 // Auth pages (no Navbar) — still respect theme
-function AuthPageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-app text-primary flex items-center justify-center transition-colors duration-200">
-      {children}
-    </div>
-  );
-}
-
 function LoginPageWrapper() {
   const navigate = useNavigate();
-  return <AuthPageShell><LoginPage onNavigate={navigate} /></AuthPageShell>;
+  return <LoginPage onNavigate={navigate} />;
 }
 function RegisterPageWrapper() {
   const navigate = useNavigate();
-  return <AuthPageShell><RegisterPage onNavigate={navigate} /></AuthPageShell>;
-}
-function DashboardWrapper() {
-  const navigate = useNavigate();
-  return (
-    <AuthLayout>
-      <DashboardPage onNavigate={navigate} onOpenNewProblem={() => navigate('/problems')} />
-    </AuthLayout>
-  );
+  return <RegisterPage onNavigate={navigate} />;
 }
 function ProblemsWrapper() {
   const navigate = useNavigate();
@@ -61,9 +57,11 @@ function ProblemsWrapper() {
 
 export default function App() {
   return (
+    <QueryClientProvider client={queryClient}>
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AuthProvider>
         <ThemeProvider>
+        <TooltipProvider delayDuration={200}>
           <Routes>
             {/* Public */}
             <Route path="/login"    element={<LoginPageWrapper />} />
@@ -74,27 +72,37 @@ export default function App() {
   <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* Protected */}
-            <Route path="/dashboard"
-              element={<ProtectedRoute><DashboardWrapper /></ProtectedRoute>} />
+            <Route path="/home"
+              element={<ProtectedRoute><AuthLayout><HomePage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/dashboard" element={<Navigate to="/home" replace />} />
             <Route path="/problems"
               element={<ProtectedRoute><ProblemsWrapper /></ProtectedRoute>} />
             <Route path="/problems/:problemId"
-              element={<ProtectedRoute><AuthLayout><ProblemDetailPage /></AuthLayout></ProtectedRoute>} />
+              element={<ProtectedRoute><AuthLayout><ProblemPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/patterns"
+              element={<ProtectedRoute><AuthLayout><PatternsPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/patterns/:key"
+              element={<ProtectedRoute><AuthLayout><PatternDetailPage /></AuthLayout></ProtectedRoute>} />
+            <Route path="/drill"
+              element={<ProtectedRoute><AuthLayout><DrillPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/profile"
               element={<ProtectedRoute><AuthLayout><ProfilePage /></AuthLayout></ProtectedRoute>} />
             <Route path="/insights"
-              element={<ProtectedRoute><AuthLayout><InsightsPage /></AuthLayout></ProtectedRoute>} />
+              element={<Navigate to="/analytics?tab=ai" replace />} />
             <Route path="/analytics"
               element={<ProtectedRoute><AuthLayout><AnalyticsPage /></AuthLayout></ProtectedRoute>} />
             <Route path="/analysis/:problemId"
-              element={<ProtectedRoute><AuthLayout><AnalysisPage /></AuthLayout></ProtectedRoute>} />
+              element={<AnalysisRedirect />} />
 
             {/* Fallbacks */}
             <Route path="/"  element={<Navigate to="/login" replace />} />
             <Route path="*"  element={<Navigate to="/login" replace />} />
           </Routes>
+          <Toaster position="bottom-right" />
+        </TooltipProvider>
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
+    </QueryClientProvider>
   );
 }

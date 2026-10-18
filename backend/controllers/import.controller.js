@@ -20,11 +20,77 @@
  *      problems stored as 'Medium' by the old hardcoded import bug.
  */
 
+import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 import * as lc from '../services/leetcodeService.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session ownership
+//
+// One CodeInsight account = one LeetCode account. Every import call checks that
+// the pasted LEETCODE_SESSION belongs to the LeetCode user on this profile —
+// otherwise another person's problems and code get mixed into this account.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function assertSessionOwner(res, handle, sessionCookie) {
+  let owner;
+  try {
+    owner = await lc.fetchSessionUsername(sessionCookie);
+  } catch (err) {
+    res.status(502);
+    throw new Error(`Could not verify your LeetCode session: ${err.message}`);
+  }
+  if (!owner) {
+    res.status(401);
+    throw new Error('This LEETCODE_SESSION is expired or invalid. Copy a fresh one from leetcode.com and try again.');
+  }
+  if (owner.toLowerCase() !== String(handle).toLowerCase()) {
+    res.status(403);
+    throw new Error(
+      `This session belongs to LeetCode user "${owner}", but your profile is linked to "${handle}". ` +
+      'Paste the session from your own LeetCode account.'
+    );
+  }
+  return owner;
+}
+
+/**
+ * @desc    Check which LeetCode user a pasted session belongs to
+ * @route   POST /api/import/leetcode/verify-session
+ */
+export const verifyLeetcodeSession = asyncHandler(async (req, res) => {
+  const user   = await User.findById(req.user._id);
+  const handle = parseLeetcodeHandle(user.leetcodeHandle);
+  if (!handle) { res.status(400); throw new Error('Set your LeetCode username first.'); }
+
+  const { sessionCookie } = req.body ?? {};
+  if (!sessionCookie || typeof sessionCookie !== 'string' || sessionCookie.trim().length < 10) {
+    res.status(400); throw new Error('Paste your LEETCODE_SESSION value.');
+  }
+  const owner = await assertSessionOwner(res, handle, sessionCookie.trim());
+  res.status(200).json({ success: true, username: owner });
+});
+
+/**
+ * @desc    Delete all imported LeetCode problems for this account
+ * @route   DELETE /api/import/leetcode
+ */
+export const removeLeetcodeData = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { deletedCount } = await Problem.deleteMany({ user: userId, platform: 'leetcode' });
+  const solvedCount = await Problem.countDocuments({ user: userId, status: 'Solved' });
+  await User.findByIdAndUpdate(userId, {
+    historyImportStatus: 'none',
+    historyImportCount: 0,
+    lastHistoryImportAt: null,
+    solvedProblemsCount: solvedCount,
+  });
+  console.log(`[Import] Removed ${deletedCount} LeetCode problems for user ${userId}`);
+  res.status(200).json({ success: true, deleted: deletedCount, message: `Removed ${deletedCount} LeetCode problems.` });
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 1A — Import solved problem list
@@ -40,6 +106,7 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
   const { sessionCookie } = req.body;
   const hasSession = sessionCookie && typeof sessionCookie === 'string' && sessionCookie.trim().length > 10;
 
+  if (hasSession) await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Import] Problem list for "${handle}" — session: ${hasSession ? 'yes' : 'no'}`);
 
   const problems = await lc.fetchAllSolvedProblems(handle, hasSession ? sessionCookie.trim() : null);
@@ -58,9 +125,12 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
       update: {
         $setOnInsert: {
           user: userId, platform: 'leetcode', platformProblemId: p.platformProblemId,
-          title: p.title, url: p.link, status: 'Solved', submissions: [],
+          title: p.title, url: p.link, submissions: [],
         },
         $set: {
+          // LeetCode's solved list is authoritative — fixes problems that Pass 1
+          // created as 'Attempted' because their newest submission wasn't AC.
+          status: 'Solved',
           difficulty: p.difficulty || 'Medium',
           ...(p.tags?.length ? { tags: p.tags } : {}),
         },
@@ -122,21 +192,32 @@ export const getCodeCoverageStatus = asyncHandler(async (req, res) => {
     },
   ]);
 
+  // Problem-level coverage: what AI analysis actually needs is code for each
+  // solved problem, not for every accepted submission ever made.
+  const [solvedProblems, missingCodeProblems] = await Promise.all([
+    Problem.countDocuments({
+      user: userId, platform: 'leetcode',
+      $or: [{ status: 'Solved' }, { 'submissions.verdict': 'Accepted' }],
+    }),
+    Problem.countDocuments(needsCodeFilter(userId)),
+  ]);
+  const solvedWithCode = solvedProblems - missingCodeProblems;
+
   const stats = result[0] || { totalProblems: [], acceptedSubmissions: 0, acceptedWithCode: 0 };
   const totalProblems = stats.totalProblems.length;
   const { acceptedSubmissions, acceptedWithCode } = stats;
 
   let status = 'none';
   if (totalProblems > 0) {
-    if (acceptedSubmissions === 0) status = 'partial';
-    else if (acceptedWithCode === 0) status = 'partial';
-    else if (acceptedWithCode >= acceptedSubmissions) status = 'full';
+    if (solvedWithCode === 0) status = 'partial';
+    else if (missingCodeProblems === 0) status = 'full';
     else status = 'mixed';
   }
 
   res.status(200).json({
     success: true, totalProblems, acceptedSubmissions, acceptedWithCode,
     missingCode: Math.max(0, acceptedSubmissions - acceptedWithCode),
+    solvedProblems, solvedWithCode, missingCodeProblems,
     status,
   });
 });
@@ -157,16 +238,18 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
   const handle = parseLeetcodeHandle(user.leetcodeHandle);
   if (!handle) { res.status(400); throw new Error('No valid LeetCode handle set.'); }
 
-  const { sessionCookie, offset = 0 } = req.body;
+  const { sessionCookie } = req.body ?? {};
+  const offset = Math.max(0, parseInt(req.body?.offset, 10) || 0);
   if (!sessionCookie || sessionCookie.trim().length < 10) {
     res.status(400);
     throw new Error('LEETCODE_SESSION is required.');
   }
 
+  await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Import 1B] REST offset=${offset} for "${handle}"`);
 
   const { submissions, hasNext, nextOffset } = await lc.fetchSubmissionHistoryREST(
-    sessionCookie.trim(), Number(offset), 20
+    sessionCookie.trim(), offset, 20
   );
   console.log(`[Import 1B] fetched=${submissions.length} hasNext=${hasNext} nextOffset=${nextOffset}`);
 
@@ -189,6 +272,15 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
       },
     }));
     await Problem.bulkWrite(upsertOps, { ordered: false });
+
+    // Any problem with an AC submission is solved, whatever its newest verdict was
+    const solvedSlugs = [...new Set(submissions.filter(s => s.verdict === 'Accepted').map(s => s.platformProblemId))];
+    if (solvedSlugs.length > 0) {
+      await Problem.updateMany(
+        { user: userId, platform: 'leetcode', platformProblemId: { $in: solvedSlugs } },
+        { $set: { status: 'Solved' } }
+      );
+    }
 
     // Update code on existing submission records that already exist but have empty code
     const subsWithCode = submissions.filter(s => s.code && s.code.trim().length > 0);
@@ -255,161 +347,178 @@ export const importLeetcodeCode = asyncHandler(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 1C — Per-problem backfill for submissions still missing code
+// Phase 1C — Fetch code for every solved problem that still has none
 //
-// FIX (July 2026 — fast path via existing submissionIds):
-// Phase 1B now pushes submission records with submissionIds (but possibly empty
-// code if submissionDetails GraphQL failed for that ID). Rather than always
-// going back to the REST per-problem endpoint (which also returns empty code
-// for old submissions), Phase 1C now:
-//   1. Checks if the problem already has an AC submission record with a
-//      submissionId in MongoDB → calls submissionDetails directly (fast, 1 req)
-//   2. Falls back to fetchBestAcSubmissionForProblem for problems with no
-//      submission records at all (Phase 1A-only problems, or problems where
-//      Phase 1B's REST cursor window didn't reach them)
+// Only the latest AC submission per problem is fetched — that's all AI
+// analysis uses — instead of every AC submission ever made.
 //
-// The filter also now includes problems with status='Solved' but ZERO submission
-// records (Phase 1A creates these; Phase 1B may not reach old ones).
+// Pagination uses an _id cursor (`after`), NOT skip. The result set shrinks as
+// problems get filled, so skip-based paging jumped over unprocessed problems
+// and roughly half the problems were never visited.
+//
+// Problems are processed a few at a time in parallel, and each batch is small
+// enough to finish well inside the client's request timeout.
 // ─────────────────────────────────────────────────────────────────────────────
+
+const BACKFILL_BATCH_SIZE  = 9;
+const BACKFILL_CONCURRENCY = 3;
+
+const hasAcCode = { $elemMatch: { verdict: 'Accepted', code: { $nin: ['', null] } } };
+
+// Solved problems (or ones with any AC submission) with no AC code at all
+const needsCodeFilter = (userId) => ({
+  user: userId,
+  platform: 'leetcode',
+  $or: [{ status: 'Solved' }, { 'submissions.verdict': 'Accepted' }],
+  submissions: { $not: hasAcCode },
+});
+
+async function fillCodeForProblem(problem, session) {
+  // Fast path: we already know the latest AC submissionId — 1 GraphQL request.
+  const latestAc = (problem.submissions ?? [])
+    .filter(s => s.verdict === 'Accepted' && s.submissionId)
+    .sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt))[0];
+
+  let result = null;
+  if (latestAc) {
+    const code = await lc.fetchSubmissionCodeById(latestAc.submissionId, session);
+    if (code && code.trim().length > 0) {
+      result = { submissionId: String(latestAc.submissionId), code, verdict: 'Accepted' };
+    }
+  }
+
+  // Slow path: discover the AC submission via REST/GraphQL, then fetch its code.
+  if (!result) {
+    result = await lc.fetchBestAcSubmissionForProblem(problem.platformProblemId, session);
+  }
+  if (!result?.code?.trim()) return false;
+
+  const targetId = String(result.submissionId ?? '');
+  if (targetId) {
+    const updated = await Problem.updateOne(
+      { _id: problem._id, 'submissions.submissionId': targetId },
+      { $set: { 'submissions.$.code': result.code } }
+    );
+    if (updated.modifiedCount > 0) return true;
+  }
+
+  // Submission record not in our DB yet — add it.
+  const pushed = await Problem.updateOne(
+    { _id: problem._id },
+    {
+      $push: {
+        submissions: {
+          $each: [{
+            submittedAt:  result.submittedAt ?? new Date(),
+            verdict:      'Accepted',
+            language:     result.language ?? '',
+            code:         result.code,
+            submissionId: targetId,
+          }],
+          $sort: { submittedAt: -1 },
+          $slice: 200,
+        },
+      },
+    }
+  );
+  return pushed.modifiedCount > 0;
+}
+
+/**
+ * Fills difficulty + topic tags for this user's LeetCode problems that have no
+ * tags yet. LeetCode's solved list (Phase 1A) stops at 600 problems, so
+ * problems beyond that only arrive via the history scan, without metadata.
+ * Returns how many problems were updated.
+ */
+async function fillMissingMeta(userId, session) {
+  // Repair difficulties stored as 'EASY'/'MEDIUM'/'HARD' by older imports —
+  // the app only understands 'Easy'/'Medium'/'Hard'.
+  for (const [raw, fixed] of [['EASY', 'Easy'], ['MEDIUM', 'Medium'], ['HARD', 'Hard']]) {
+    await Problem.updateMany({ user: userId, platform: 'leetcode', difficulty: raw }, { $set: { difficulty: fixed } });
+  }
+
+  const missing = await Problem.find(
+    { user: userId, platform: 'leetcode', $or: [{ tags: { $size: 0 } }, { tags: { $exists: false } }] },
+    { platformProblemId: 1 }
+  ).lean();
+  if (!missing.length) return 0;
+
+  const meta = await lc.fetchQuestionMeta(missing.map(p => p.platformProblemId), session);
+  const ops = [];
+  for (const [slug, m] of meta) {
+    const $set = {};
+    if (['Easy', 'Medium', 'Hard'].includes(m.difficulty)) $set.difficulty = m.difficulty;
+    if (m.tags.length) $set.tags = m.tags;
+    if (Object.keys($set).length) {
+      ops.push({ updateOne: { filter: { user: userId, platform: 'leetcode', platformProblemId: slug }, update: { $set } } });
+    }
+  }
+  if (!ops.length) return 0;
+  const r = await Problem.bulkWrite(ops, { ordered: false });
+  console.log(`[Import] Filled difficulty/tags for ${r.modifiedCount}/${missing.length} problems`);
+  return r.modifiedCount;
+}
 
 export const backfillMissingCode = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const { sessionCookie, skip = 0, limit = 10 } = req.body;
+  const { sessionCookie, after } = req.body ?? {};
   if (!sessionCookie || sessionCookie.trim().length < 10) {
     res.status(400); throw new Error('LEETCODE_SESSION is required.');
   }
-
-  const currentSkip = Number(skip);
-  const pageLimit   = Math.min(Number(limit), 20);
-  const session     = sessionCookie.trim();
-
-  // Match problems that still need code:
-  //  Case A — has AC submission(s) with empty/null/missing code
-  //  Case B — status=Solved but no submission records at all (Phase 1A-only)
-  const needsBackfillFilter = {
-    user: userId, platform: 'leetcode', status: 'Solved',
-    $or: [
-      {
-        submissions: {
-          $elemMatch: {
-            verdict: 'Accepted',
-            $or: [{ code: '' }, { code: null }, { code: { $exists: false } }],
-          },
-        },
-      },
-      { submissions: { $size: 0 } },
-      { submissions: { $exists: false } },
-    ],
-  };
-
-  const total = await Problem.countDocuments(needsBackfillFilter);
-  if (total === 0) {
-    return res.status(200).json({
-      success: true, processed: 0, filled: 0, skipped: 0, backfilled: 0, total: 0,
-      hasMore: false, nextSkip: 0,
-      message: 'All submissions already have code — nothing to backfill.',
-    });
+  const user   = await User.findById(userId);
+  const handle = parseLeetcodeHandle(user.leetcodeHandle);
+  if (!handle) { res.status(400); throw new Error('No valid LeetCode handle set.'); }
+  await assertSessionOwner(res, handle, sessionCookie.trim());
+  if (after != null && !mongoose.isValidObjectId(after)) {
+    res.status(400); throw new Error('Invalid cursor.');
   }
 
-  const problems = await Problem.find(needsBackfillFilter, { platformProblemId: 1, submissions: 1 })
-    .skip(currentSkip).limit(pageLimit).lean();
+  const session = sessionCookie.trim();
+
+  // First call of Pass 2: Pass 1 has created every problem from the history,
+  // so this is the point to fill in tags/difficulty the solved list missed.
+  const metaFilled = after ? 0 : await fillMissingMeta(userId, session);
+
+  const filter  = needsCodeFilter(userId);
+  if (after) filter._id = { $gt: new mongoose.Types.ObjectId(String(after)) };
+
+  const problems = await Problem.find(filter, { platformProblemId: 1, submissions: 1 })
+    .sort({ _id: 1 })
+    .limit(BACKFILL_BATCH_SIZE)
+    .lean();
 
   let filled = 0, skipped = 0;
+  let authError = null;
 
-  for (const problem of problems) {
-    try {
-      // Fast path: if we already have an AC submissionId in MongoDB, call
-      // submissionDetails directly — 1 GraphQL request, no REST discovery needed.
-      const existingAcSub = (problem.submissions ?? []).find(s =>
-        s.verdict === 'Accepted' &&
-        s.submissionId &&
-        String(s.submissionId).length > 0 &&
-        (!s.code || s.code.trim().length === 0)
-      );
-
-      let result = null;
-
-      if (existingAcSub?.submissionId) {
-        console.log(`[Import 1C] Fast path: submissionDetails for ${existingAcSub.submissionId} ("${problem.platformProblemId}")`);
-        const code = await lc.fetchSubmissionCodeById(existingAcSub.submissionId, session);
-        if (code && code.trim().length > 0) {
-          result = { submissionId: String(existingAcSub.submissionId), code, verdict: 'Accepted' };
-        } else {
-          console.warn(`[Import 1C] submissionDetails empty for ${existingAcSub.submissionId} — trying discovery`);
-        }
-      }
-
-      // Slow path: no usable submissionId in MongoDB — discover via REST + submissionDetails
-      if (!result) {
-        result = await lc.fetchBestAcSubmissionForProblem(problem.platformProblemId, session);
-      }
-
-      if (!result || !result.code || result.code.trim().length === 0) {
+  // Small worker pool: BACKFILL_CONCURRENCY problems in flight at a time.
+  let next = 0;
+  const worker = async () => {
+    while (next < problems.length && !authError) {
+      const problem = problems[next++];
+      try {
+        if (await fillCodeForProblem(problem, session)) filled++;
+        else skipped++;
+      } catch (err) {
+        // Only a genuinely expired session aborts the batch; 403/429 throttling
+        // just leaves this problem for a later run.
+        if (/expired/i.test(err.message)) authError = err;
+        console.warn(`[Import 1C] ✗ "${problem.platformProblemId}": ${err.message}`);
         skipped++;
-        continue;
       }
-
-      // Write the code back to MongoDB
-      let updated;
-      const targetId = result.submissionId || existingAcSub?.submissionId;
-
-      if (targetId) {
-        // Target the specific submission record by ID (positional $ operator)
-        updated = await Problem.updateOne(
-          { _id: problem._id, 'submissions.submissionId': String(targetId) },
-          { $set: { 'submissions.$.code': result.code } }
-        );
-        // If that record wasn't found (ID mismatch), fall back to updating any empty AC sub
-        if (updated.modifiedCount === 0) {
-          updated = await Problem.updateOne(
-            { _id: problem._id },
-            { $set: { 'submissions.$[elem].code': result.code } },
-            {
-              arrayFilters: [{
-                'elem.verdict': 'Accepted',
-                $or: [{ 'elem.code': '' }, { 'elem.code': null }, { 'elem.code': { $exists: false } }],
-              }],
-            }
-          );
-        }
-      } else {
-        // No submissionId at all — push a brand new submission record
-        updated = await Problem.updateOne(
-          { _id: problem._id },
-          {
-            $push: {
-              submissions: {
-                $each: [{
-                  submittedAt:  result.submittedAt ?? new Date(),
-                  verdict:      'Accepted',
-                  language:     result.language ?? '',
-                  code:         result.code,
-                  submissionId: String(result.submissionId ?? ''),
-                }],
-                $sort: { submittedAt: -1 },
-                $slice: 200,
-              },
-            },
-          }
-        );
-      }
-
-      if (updated.modifiedCount > 0) filled++;
-      else skipped++;
-
-    } catch (err) {
-      console.warn(`[Import 1C] ✗ "${problem.platformProblemId}": ${err.message}`);
-      skipped++;
+      // Light jitter so parallel requests don't fire in lockstep
+      await new Promise(r => setTimeout(r, 150 + Math.random() * 250));
     }
+  };
+  await Promise.all(Array.from({ length: BACKFILL_CONCURRENCY }, worker));
 
-    // Randomised delay — each iteration makes 1-2 LeetCode requests (fast path = 1)
-    const baseDelay = 400;
-    const jitter = baseDelay * 0.4 * (Math.random() * 2 - 1);
-    await new Promise(r => setTimeout(r, baseDelay + jitter));
-  }
+  if (authError) { res.status(401); throw authError; }
 
-  const processed = problems.length;
-  const hasMore   = currentSkip + processed < total;
+  const lastId    = problems.length ? problems[problems.length - 1]._id : (after ?? null);
+  const remaining = problems.length
+    ? await Problem.countDocuments({ ...needsCodeFilter(userId), _id: { $gt: lastId } })
+    : 0;
+  const hasMore   = remaining > 0;
+
   await User.findByIdAndUpdate(userId, {
     historyImportStatus: hasMore ? 'partial' : 'full',
     lastHistoryImportAt: new Date(),
@@ -418,12 +527,12 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
   const backfillError = (filled === 0 && skipped > 0) ? lc.getLastCodeFetchError() : null;
 
   res.status(200).json({
-    success: true, processed, filled, skipped, backfilled: filled, total,
-    hasMore, nextSkip: currentSkip + processed,
+    success: true, processed: problems.length, filled, skipped, backfilled: filled, metaFilled,
+    remaining, hasMore, nextCursor: lastId,
     ...(backfillError ? { codeEnrichmentError: backfillError } : {}),
     message: hasMore
-      ? `Backfill: ${filled} filled, ${skipped} unavailable. ${total - currentSkip - processed} remaining.`
-      : `Backfill complete. ${filled} submissions now have code.`,
+      ? `Backfill: ${filled} filled, ${skipped} unavailable. ${remaining} remaining.`
+      : `Backfill complete. ${filled} problems got code in this batch.`,
   });
 });
 
@@ -444,6 +553,7 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
     throw new Error('LEETCODE_SESSION is required. This repair needs authenticated data to get real difficulties.');
   }
 
+  await assertSessionOwner(res, handle, sessionCookie.trim());
   console.log(`[Repair] Fetching real difficulties for "${handle}"...`);
   const problems = await lc.fetchAllSolvedProblems(handle, sessionCookie.trim());
 
@@ -490,12 +600,14 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
 
   const result = await Problem.bulkWrite(ops, { ordered: false });
   const fixed  = result.modifiedCount;
+  // The solved list stops at 600 problems — fill the rest individually.
+  const extraFilled = await fillMissingMeta(userId, sessionCookie.trim());
   const withTags = Array.from(infoMap.values()).filter(v => v.tags.length > 0).length;
 
-  console.log(`[Repair] Done. ${fixed}/${ops.length} records updated (${withTags} had tags).`);
+  console.log(`[Repair] Done. ${fixed}/${ops.length} solved-list records updated, ${extraFilled} more filled individually.`);
   res.status(200).json({
-    success: true, fixed, total: ops.length, withTags,
-    message: `Repair complete. Updated ${fixed} of ${ops.length} problems with real difficulties` +
-      (withTags > 0 ? ` and topic tags (${withTags} problems had tags).` : '. No tags came back — session may lack access.'),
+    success: true, fixed, total: ops.length, withTags, extraFilled,
+    message: `Repair complete. Updated ${fixed} of ${ops.length} problems from your solved list` +
+      (extraFilled > 0 ? `, and filled difficulty/tags for ${extraFilled} more problems.` : '.'),
   });
 });

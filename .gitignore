@@ -11,3 +11,7 @@ backend/.env
 # Production builds
 dist/
 build/
+# Pilot reports (contain student emails)
+backend/reports/
+# Packaged extension for the pilot (see docs/PILOT.md)
+extension-dist/

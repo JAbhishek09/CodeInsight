@@ -2,6 +2,16 @@ import axios from 'axios';
 
 const TOKEN_KEY = 'codeinsight_token';
 
+/** A failed API call. `status` is the HTTP status, or undefined when the server couldn't be reached. */
+export class ApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 const api = axios.create({
   baseURL: '/api',
   // Default timeout: 30s for regular calls.
@@ -18,9 +28,9 @@ api.interceptors.request.use(
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) config.headers.Authorization = `Bearer ${token}`;
 
-    // Import endpoints can take up to ~120s (10 pages × 1s delay + network)
+    // Import endpoints call LeetCode several times per request — allow up to 3 min
     if (config.url?.includes('/import/')) {
-      config.timeout = 120000;
+      config.timeout = 180000;
     }
 
     return config;
@@ -36,16 +46,21 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (res) => res,
   (error) => {
-    const isImportEndpoint = error.config?.url?.includes('/import/');
+    const url: string = error.config?.url ?? '';
+    const isImportEndpoint = url.includes('/import/');
+    // Auth endpoints (login/register/reset) return 401 for bad credentials —
+    // let the caller show the error instead of reloading the page.
+    const isAuthEndpoint = url.includes('/auth/');
+    const alreadyOnLogin = window.location.pathname.startsWith('/login');
 
-    if (error.response?.status === 401 && !isImportEndpoint) {
+    if (error.response?.status === 401 && !isImportEndpoint && !isAuthEndpoint && !alreadyOnLogin) {
       localStorage.removeItem(TOKEN_KEY);
       window.location.href = '/login';
     }
     const message =
       error.response?.data?.message || error.message || 'A network error occurred.';
     console.error(`[API] ${error.config?.method?.toUpperCase()} ${error.config?.url}: ${message}`);
-    return Promise.reject(new Error(message));
+    return Promise.reject(new ApiError(message, error.response?.status));
   }
 );
 

@@ -1,18 +1,20 @@
-import { dayKey } from '../utils/stats';
+import { dayKey } from '../lib/format';
 
 interface HeatmapProps {
   /** date(YYYY-MM-DD) → count of solves that day */
   data: Record<string, number>;
   /** how many weeks of history to render (default ~1 year) */
   weeks?: number;
+  /** What a count means, e.g. ['problem solved', 'problems solved']. */
+  unit?: [singular: string, plural: string];
 }
 
 const LEVELS = [
-  { max: 0, color: '#0f1420' },
-  { max: 1, color: '#4a1942' },
-  { max: 2, color: '#831843' },
-  { max: 4, color: '#db2777' },
-  { max: Infinity, color: '#f472b6' },
+  { max: 0, color: 'var(--heat-0)' },
+  { max: 1, color: 'var(--heat-1)' },
+  { max: 2, color: 'var(--heat-2)' },
+  { max: 4, color: 'var(--heat-3)' },
+  { max: Infinity, color: 'var(--heat-4)' },
 ];
 
 function levelColor(count: number): string {
@@ -28,12 +30,12 @@ const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 /**
  * GitHub-style contribution heatmap.
  *
- * Built entirely from `submissions[].submittedAt` already returned by
- * `GET /api/problems` — no dedicated backend endpoint required. Cells with
- * no recorded activity simply render at the lowest intensity (empty), so
- * this degrades gracefully to an all-empty grid for brand-new accounts.
+ * Takes per-day counts keyed by local date (YYYY-MM-DD), e.g. solvedByDay or
+ * submissionsByDay from GET /api/analytics/summary. Days with no activity
+ * render at the lowest intensity, so new accounts get an empty grid.
  */
-export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
+export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'problems solved'] }: HeatmapProps) {
+  const label = (n: number) => `${n} ${n === 1 ? unit[0] : unit[1]}`;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -85,8 +87,7 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
               x={col * STEP}
               y={10}
               fontSize="9"
-              fill="#64748b"
-              fontFamily="monospace"
+              fill="var(--text-muted)"
             >
               {label}
             </text>
@@ -99,9 +100,8 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
                 y={TOP_PAD + row * STEP + CELL - 1}
                 textAnchor="end"
                 fontSize="8"
-                fill="#475569"
-                fontFamily="monospace"
-              >
+                fill="var(--text-muted)"
+                >
                 {label}
               </text>
             ) : null
@@ -117,19 +117,19 @@ export default function Heatmap({ data, weeks = 53 }: HeatmapProps) {
                 width={CELL}
                 height={CELL}
                 rx={2.5}
-                fill={levelColor(c.count)}
-                stroke="rgba(255,255,255,0.03)"
+                style={{ fill: levelColor(c.count) }}
+                
               >
                 <title>
-                  {c.count} solved · {c.date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {label(c.count)} · {c.date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                 </title>
               </rect>
             );
           })}
         </svg>
       </div>
-      <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-        <span>{totalSolves} solves in the last {weeks} weeks</span>
+      <div className="flex items-center justify-between text-[10px] text-subtle">
+        <span><span className="tabular-nums">{label(totalSolves)}</span> in the last year</span>
         <div className="flex items-center gap-1.5">
           <span>Less</span>
           {LEVELS.map((l, i) => (

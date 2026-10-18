@@ -1,42 +1,53 @@
 /**
  * analytics.controller.js
- * Platform-level analytics aggregations (submission stats by verdict, difficulty, etc.)
- * These power the DashboardPage charts.
+ * Ready-made analytics for the dashboard and stats pages.
+ * See docs/analytics-api.md for the response shape.
  */
 
 import asyncHandler from '../utils/asyncHandler.js';
-import Problem from '../models/Problem.js';
+import { buildAnalyticsSummary, isValidTimeZone, PLATFORMS } from '../services/analyticsService.js';
+import { buildAiInsights } from '../services/aiInsightsService.js';
 
 /**
- * @desc    Get submission analytics for the logged-in user
- * @route   GET /api/analytics/summary
+ * @desc    Get analytics summary for the logged-in user
+ * @route   GET /api/analytics/summary?platform=all|leetcode|codeforces&tz=<IANA zone>
  * @access  Private
  */
 export const getAnalyticsSummary = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
+  const platform = typeof req.query.platform === 'string' && req.query.platform ? req.query.platform : 'all';
+  const tz = typeof req.query.tz === 'string' && req.query.tz ? req.query.tz : 'UTC';
 
-  // Total problems by platform
-  const byPlatform = await Problem.aggregate([
-    { $match: { user: userId } },
-    { $group: { _id: '$platform', count: { $sum: 1 } } },
-  ]);
+  if (!PLATFORMS.includes(platform)) {
+    res.status(400);
+    throw new Error(`Invalid platform. Use one of: ${PLATFORMS.join(', ')}`);
+  }
+  if (!isValidTimeZone(tz)) {
+    res.status(400);
+    throw new Error('Invalid tz. Use an IANA time zone name such as "Asia/Kolkata".');
+  }
 
-  // Verdict distribution across all submissions
-  const verdictDist = await Problem.aggregate([
-    { $match: { user: userId } },
-    { $unwind: '$submissions' },
-    { $group: { _id: '$submissions.verdict', count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-  ]);
-
-  // Problems with at least one TLE or WA (candidates for analysis)
-  const needsAnalysis = await Problem.countDocuments({
-    user: userId,
-    'submissions.verdict': { $in: ['TLE', 'Wrong Answer', 'RE', 'MLE'] },
+  const data = await buildAnalyticsSummary({
+    userId: req.user._id,
+    platform,
+    tz,
+    targetDailySolved: req.user.targetDailySolved,
   });
 
-  res.status(200).json({
-    success: true,
-    data: { byPlatform, verdictDist, needsAnalysis },
-  });
+  res.status(200).json({ success: true, data });
+});
+
+/**
+ * @desc    Text of every stored AI analysis (no code), review coverage and
+ *          time-to-accepted, for the AI insights tab
+ * @route   GET /api/analytics/ai-insights?platform=all|leetcode|codeforces
+ * @access  Private
+ */
+export const getAiInsights = asyncHandler(async (req, res) => {
+  const platform = typeof req.query.platform === 'string' && req.query.platform ? req.query.platform : 'all';
+  if (!PLATFORMS.includes(platform)) {
+    res.status(400);
+    throw new Error(`Invalid platform. Use one of: ${PLATFORMS.join(', ')}`);
+  }
+  const data = await buildAiInsights({ userId: req.user._id, platform });
+  res.status(200).json({ success: true, data });
 });

@@ -16,13 +16,12 @@
  *
  * THE REAL SOURCE OF CODE: submissionDetails GraphQL query. This is the only
  * LeetCode API that reliably returns source code for any submission by ID
- * regardless of age. We now call it inline during Phase 1B enrichment, and
- * Phase 1C uses it directly via the exported fetchSubmissionCodeById.
+ * regardless of age. Phase 1C (backfill) calls it through
+ * the exported fetchSubmissionCodeById.
  *
  * STRATEGY:
- *  Phase 1B — REST pagination for metadata (IDs, verdicts, timestamps).
- *              For every AC submission without code on the page, call
- *              submissionDetails GraphQL to enrich it before returning.
+ *  Phase 1B — REST pagination for metadata (IDs, verdicts, timestamps), plus
+ *              code only where REST still returns it (recent submissions).
  *  Phase 1C — If a problem already has a submissionId in MongoDB (put there
  *              by Phase 1B), call fetchSubmissionCodeById directly (1 request).
  *              Otherwise fall back to fetchBestAcSubmissionForProblem which
@@ -30,6 +29,7 @@
  */
 
 import axios from 'axios';
+import crypto from 'crypto';
 
 const LC_BASE    = 'https://leetcode.com';
 const LC_GRAPHQL = `${LC_BASE}/graphql`;
@@ -129,13 +129,34 @@ function makeRestHeaders(sessionCookie) {
   };
 }
 
+/**
+ * Which LeetCode user a LEETCODE_SESSION belongs to (null if not signed in).
+ * Cached briefly so paginated import calls don't re-check on every page.
+ */
+const sessionOwnerCache = new Map(); // sha256(session) → { username, at }
+const SESSION_OWNER_TTL_MS = 10 * 60 * 1000;
+
+export async function fetchSessionUsername(sessionCookie) {
+  const key = crypto.createHash('sha256').update(sanitiseSession(sessionCookie)).digest('hex');
+  const cached = sessionOwnerCache.get(key);
+  if (cached && Date.now() - cached.at < SESSION_OWNER_TTL_MS) return cached.username;
+
+  const data = await lcGraphQL(
+    'query globalData { userStatus { isSignedIn username } }', {}, sessionCookie
+  );
+  const status = data?.data?.userStatus;
+  const username = status?.isSignedIn && status.username ? status.username : null;
+  if (username) sessionOwnerCache.set(key, { username, at: Date.now() });
+  return username;
+}
+
 async function lcGraphQL(query, variables, sessionCookie = null) {
   let res;
   try {
     res = await axios.post(
       LC_GRAPHQL,
       { query, variables },
-      { headers: makeHeaders(sessionCookie), timeout: 30000 }
+      { headers: makeHeaders(sessionCookie), timeout: 15000 }
     );
   } catch (err) {
     if (err.response?.status === 403) throw new Error('LeetCode returned 403 — IP may be rate-limited. Try again in a few minutes.');
@@ -150,6 +171,12 @@ async function lcGraphQL(query, variables, sessionCookie = null) {
     throw new Error(`LeetCode GraphQL error: ${res.data.errors.map(e => e.message).join('; ')}`);
   }
   return res.data;
+}
+
+// LeetCode returns difficulty as 'EASY'/'MEDIUM'/'HARD' from some queries and
+// 'Easy'/'Medium'/'Hard' from others; the app only understands the latter.
+export function normaliseDifficulty(raw) {
+  return { EASY: 'Easy', MEDIUM: 'Medium', HARD: 'Hard' }[String(raw ?? '').toUpperCase()] ?? null;
 }
 
 function mapVerdict(statusDisplay) {
@@ -229,7 +256,7 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
       allProblems.push({
         platformProblemId: p.titleSlug, title: p.title,
         link: `${LC_BASE}/problems/${p.titleSlug}/`,
-        difficulty: p.difficulty ?? 'Medium',
+        difficulty: normaliseDifficulty(p.difficulty) ?? 'Medium',
         tags: (p.topicTags ?? []).map(t => t.name),
         verdict: 'Accepted', submittedAt: null, submissionId: null, language: null, code: '',
       });
@@ -240,6 +267,40 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
   } while (skip < totalNum);
 
   return allProblems;
+}
+
+/**
+ * Difficulty + topic tags for specific problems, 50 per GraphQL request via
+ * aliases. Needed because userProgressQuestionList stops at 600 problems
+ * (observed live: 988 solved, 600 returned), leaving the rest without tags.
+ * Returns Map<slug, { title, difficulty, tags }>.
+ */
+export async function fetchQuestionMeta(slugs, sessionCookie = null) {
+  const meta = new Map();
+  const CHUNK = 50;
+  for (let i = 0; i < slugs.length; i += CHUNK) {
+    const chunk = slugs.slice(i, i + CHUNK);
+    const varDefs = chunk.map((_, j) => `$s${j}: String!`).join(', ');
+    const fields  = chunk.map((_, j) =>
+      `q${j}: question(titleSlug: $s${j}) { titleSlug title difficulty topicTags { name } }`
+    ).join('\n');
+    const variables = Object.fromEntries(chunk.map((slug, j) => [`s${j}`, slug]));
+    try {
+      const data = await lcGraphQL(`query questionMeta(${varDefs}) {\n${fields}\n}`, variables, sessionCookie);
+      for (const q of Object.values(data?.data ?? {})) {
+        if (!q?.titleSlug) continue;
+        meta.set(q.titleSlug, {
+          title: q.title,
+          difficulty: normaliseDifficulty(q.difficulty),
+          tags: (q.topicTags ?? []).map(t => t.name),
+        });
+      }
+    } catch (err) {
+      console.warn(`[LC] questionMeta chunk ${i / CHUNK + 1} failed: ${err.message}`);
+    }
+    if (i + CHUNK < slugs.length) await new Promise(r => setTimeout(r, 500));
+  }
+  return meta;
 }
 
 async function fetchRecentAcSubmissions(handle) {
@@ -266,11 +327,11 @@ async function fetchRecentAcSubmissions(handle) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. SUBMISSION HISTORY WITH CODE — REST + submissionDetails enrichment (Phase 1B)
+// 3. SUBMISSION HISTORY WITH CODE — REST metadata (Phase 1B)
 //
-// KEY FIX: REST /api/submissions/ returns code:"" for submissions >~30 days old.
-// We call submissionDetails GraphQL for every AC submission on the page that
-// has no code, enriching inline before returning to the controller.
+// REST /api/submissions/ returns code:"" for submissions >~30 days old. That is
+// fine here: this pass only collects IDs/verdicts; Phase 1C fetches missing
+// code per problem via submissionDetails.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchSubmissionHistoryREST(sessionCookie, offset = 0, limit = 20) {
@@ -341,23 +402,13 @@ export async function fetchSubmissionHistoryREST(sessionCookie, offset = 0, limi
     memory:            s.memory     ?? '',
   }));
 
-  // KEY FIX: enrich AC submissions that have no code via submissionDetails
-  const acWithoutCode = submissions.filter(s => s.verdict === 'Accepted' && !s.code);
-  if (acWithoutCode.length > 0) {
-    console.log(`[LC REST] offset ${offset}: ${acWithoutCode.length}/${submissions.length} AC subs need submissionDetails enrichment`);
-    for (const sub of acWithoutCode) {
-      try {
-        const code = await fetchSubmissionCode(sub.submissionId, clean);
-        if (code && code.trim().length > 0) sub.code = code.trim();
-        await new Promise(r => setTimeout(r, 300)); // avoid rate limiting
-      } catch (err) {
-        console.warn(`[LC] submissionDetails failed for sub ${sub.submissionId}: ${err.message}`);
-      }
-    }
-  }
+  // NOTE: no per-submission submissionDetails enrichment here any more. Doing
+  // it for every AC submission on every page (sequentially, with delays) was
+  // what made the import take forever. Pass 2 (backfill) now fetches code for
+  // just the latest AC submission of each solved problem that still lacks it.
 
   const withCode = submissions.filter(s => s.code && s.code.trim().length > 0);
-  console.log(`[LC REST] offset ${offset}: ${submissions.length} subs, ${withCode.length} with code after enrichment, hasNext=${hasNext}`);
+  console.log(`[LC REST] offset ${offset}: ${submissions.length} subs, ${withCode.length} with code, hasNext=${hasNext}`);
 
   return { submissions, hasNext, nextOffset: offset + submissions.length };
 }
@@ -390,7 +441,7 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
     const url = `${LC_BASE}/api/submissions/${encodeURIComponent(titleSlug)}/`;
     const res = await axios.get(url, {
       headers: makeRestHeaders(clean),
-      timeout: 20000,
+      timeout: 15000,
       decompress: true,
     });
 
@@ -434,10 +485,14 @@ export async function fetchBestAcSubmissionForProblem(titleSlug, sessionCookie) 
       return null;
     }
   } catch (err) {
-    if (err.response?.status === 401 || err.response?.status === 403) {
+    if (err.response?.status === 401) {
       throw new Error('LEETCODE_SESSION expired during per-problem backfill.');
     }
-    if (err.response?.status !== 404) {
+    // 403 here is LeetCode throttling the REST endpoint (observed live after
+    // ~20 rapid history pages), not an expired session — GraphQL still works.
+    if (err.response?.status === 403) {
+      console.warn(`[LC] T1 REST 403 for "${titleSlug}" (throttled) — trying GraphQL`);
+    } else if (err.response?.status !== 404) {
       console.warn(`[LC] T1 REST failed for "${titleSlug}": ${err.message} — trying GraphQL`);
     }
   }

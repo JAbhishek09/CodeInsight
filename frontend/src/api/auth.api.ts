@@ -12,7 +12,11 @@ export interface RegisterPayload {
   email: string;
   password: string;
   targetDailySolved?: number;
+  invite?: string;
 }
+
+/** Sign-up settings (pilot invite code). */
+export const getAuthConfig = async () => (await api.get('/auth/config')).data?.data as { inviteRequired: boolean };
 
 export const login = async (credentials: LoginPayload) => {
   const res = await api.post('/auth/login', credentials);
@@ -37,6 +41,12 @@ export const getMe = async () => {
 
 export const saveHandles = async (handles: { leetcode?: string; codeforces?: string }) => {
   const res = await api.put('/auth/handles', handles);
+  return res.data;
+};
+
+/** Update name and/or daily goal (1–20). Returns the updated user. */
+export const updateProfile = async (data: { name?: string; targetDailySolved?: number }) => {
+  const res = await api.put('/auth/profile', data);
   return res.data;
 };
 

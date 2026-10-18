@@ -85,8 +85,8 @@ const ProblemSchema = new mongoose.Schema(
     status:         { type: String, enum: { values: ['Solved', 'Attempted', 'To Do'], message: 'Invalid status' }, default: 'Solved' },
     category:       { type: String, trim: true, default: 'General' },
     notes:          { type: String, trim: true },
-    timeComplexity:  { type: String, trim: true, default: 'O(N)' },
-    spaceComplexity: { type: String, trim: true, default: 'O(N)' },
+    timeComplexity:  { type: String, trim: true, default: '' },
+    spaceComplexity: { type: String, trim: true, default: '' },
 
     submissions: [SubmissionSchema],
 
@@ -99,6 +99,11 @@ const ProblemSchema = new mongoose.Schema(
       default: 'idle',
     },
     aiAnalysisError: { type: String, default: null },
+    // Hash of the code the in-flight job is analysing, and when it started.
+    // Lets a finished job detect it has been superseded, and lets a job that
+    // died with the process be treated as stale instead of 'pending' forever.
+    aiAnalysisPendingHash:  { type: String, default: null },
+    aiAnalysisPendingSince: { type: Date, default: null },
   },
   { timestamps: true }
 );

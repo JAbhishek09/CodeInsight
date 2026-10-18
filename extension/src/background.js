@@ -78,6 +78,7 @@ const CONFIG = {
   RETRY_ALARM:                'codeinsight-retry-queue',
   RETRY_ALARM_PERIOD_MINUTES: 1,
   SW_KEEPALIVE_MS:            25_000,
+  REQUEST_TIMEOUT_MS:         15_000,
 };
 
 // ─── Rate Limiter (chrome.storage.session-backed) ─────────────────────────────
@@ -119,12 +120,22 @@ function safeSendResponse(sendResponse, value) {
 // ─── Message Handler ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
+  // Settings may only be changed from extension pages (the popup), never from
+  // a content script running inside a web page.
+  const fromExtensionPage = !sender.tab && sender.id === chrome.runtime.id;
+  if ((message.type === 'SAVE_SETTINGS' || message.type === 'CLEAR_AUTH') && !fromExtensionPage) {
+    safeSendResponse(sendResponse, { success: false, error: 'Not allowed from this context' });
+    return false;
+  }
+
   if (message.type === 'SAVE_SETTINGS') {
-     console.log('[BG] SAVE_SETTINGS received');
     chrome.storage.local.set({
       ci_jwt:     message.jwt,
       ci_api_base: message.apiBase || CONFIG.DEFAULT_API_BASE,
-    }).then(() => safeSendResponse(sendResponse, { success: true }));
+    }).then(() => {
+      safeSendResponse(sendResponse, { success: true });
+      processRetryQueue(); // retry anything queued while logged out
+    });
     return true;
   }
 
@@ -172,24 +183,68 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Pattern guesses and feedback (picker.js on LeetCode problem pages)
+  if (message.type === 'SUBMIT_PREDICTION' || message.type === 'GET_FEEDBACK') {
+    if (!sender.url?.startsWith('https://leetcode.com/')) {
+      safeSendResponse(sendResponse, { success: false, error: 'Invalid sender origin' });
+      return false;
+    }
+    const slug = String(message.slug || '');
+    const req = message.type === 'SUBMIT_PREDICTION'
+      ? apiRequest('POST', '/api/predictions', { slug, predicted: message.predicted, source: 'extension' })
+      : apiRequest('GET', `/api/predictions/latest?slug=${encodeURIComponent(slug)}`);
+    req.then((r) => safeSendResponse(sendResponse, r));
+    return true;
+  }
+
   return false;
 });
 
-// ─── Upload Handler ───────────────────────────────────────────────────────────
-async function handleUpload(payload) {
+/** Authenticated JSON request to the CodeInsight API. Never throws. */
+async function apiRequest(method, path, body) {
   const { jwt, apiBase } = await loadSettings();
-  console.log('[BG] JWT exists?', !!jwt);
-  console.log('[BG] JWT first 20 chars:', jwt?.slice(0, 20));
-  console.log('[BG] API Base:', apiBase);
+  if (!jwt) return { success: false, error: 'Sign in to the CodeInsight extension first.' };
+  try {
+    const res = await fetch(`${apiBase}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) return { success: false, error: json.message || `HTTP ${res.status}` };
+    return { success: true, data: json.data };
+  } catch (err) {
+    return { success: false, error: err.name === 'TimeoutError' ? 'CodeInsight didn’t respond.' : err.message };
+  }
+}
+
+// ─── Upload Handler ───────────────────────────────────────────────────────────
+/**
+ * Uploads one submission. The payload is persisted to the retry queue BEFORE
+ * any network work, and removed only once the backend has accepted it (or
+ * rejected it permanently). So if the service worker is killed mid-upload,
+ * the alarm-driven retry queue still picks it up.
+ */
+async function handleUpload(payload) {
+  await enqueueForRetry(payload);
+  const result = await attemptUpload(payload);
+  if (result.success || result.permanent) await removeFromQueue(payload.submissionId);
+  return result;
+}
+
+/**
+ * Tries to POST a submission up to MAX_RETRIES times. Never touches the queue.
+ * Returns { success, data } | { success:false, error, permanent? }.
+ */
+async function attemptUpload(payload) {
+  const { jwt, apiBase } = await loadSettings();
   if (!jwt) {
     console.error('[CodeInsight BG] No JWT in storage — open popup and log in.');
     return { success: false, error: 'Not authenticated. Open popup to log in.' };
   }
 
-  const nonce    = generateNonce();
-  const body     = { ...payload, _nonce: nonce, _ts: Date.now() };
   const endpoint = `${apiBase}${CONFIG.SUBMISSION_ENDPOINT}`;
-  console.log('[BG] Endpoint:', endpoint);
   console.log('[CodeInsight BG] POSTing to', endpoint, 'subId:', payload.submissionId);
 
   const keepAlive = setInterval(
@@ -200,6 +255,9 @@ async function handleUpload(payload) {
   try {
     for (let attempt = 1; attempt <= CONFIG.MAX_RETRIES; attempt++) {
       try {
+        // Fresh nonce per attempt: the backend consumes a nonce before writing,
+        // so re-sending the same one after a failed write would get a 409.
+        const body = { ...payload, _nonce: generateNonce(), _ts: Date.now() };
         const res = await fetch(endpoint, {
           method:  'POST',
           headers: {
@@ -207,7 +265,8 @@ async function handleUpload(payload) {
             'Authorization':          `Bearer ${jwt}`,
             'X-CodeInsight-Version':  chrome.runtime.getManifest().version,
           },
-          body: JSON.stringify(body),
+          body:   JSON.stringify(body),
+          signal: AbortSignal.timeout(CONFIG.REQUEST_TIMEOUT_MS),
         });
 
         if (res.ok) {
@@ -219,12 +278,14 @@ async function handleUpload(payload) {
           console.error('[CodeInsight BG] 401 — JWT rejected by backend.');
           return { success: false, error: 'Auth failed. Re-login in extension popup.' };
         }
-        if (res.status === 409) {
-          console.log('[CodeInsight BG] Duplicate — already recorded.');
-          return { success: true, data: { message: 'Duplicate' } };
-        }
         const errBody = await res.json().catch(() => ({}));
         console.warn(`[CodeInsight BG] Attempt ${attempt} HTTP ${res.status}:`, errBody.message || errBody);
+
+        // Other 4xx (validation etc.) will never succeed on retry — except 409
+        // (nonce clash, retry with a new nonce) and 429 (rate limited).
+        if (res.status >= 400 && res.status < 500 && res.status !== 409 && res.status !== 429) {
+          return { success: false, permanent: true, error: errBody.message || `HTTP ${res.status}` };
+        }
 
       } catch (netErr) {
         console.warn(`[CodeInsight BG] Network error attempt ${attempt}:`, netErr.message);
@@ -235,7 +296,6 @@ async function handleUpload(payload) {
       }
     }
 
-    await enqueueForRetry(payload);
     return { success: false, error: 'Upload failed after retries. Will retry automatically.' };
 
   } finally {
@@ -244,36 +304,69 @@ async function handleUpload(payload) {
 }
 
 // ─── Retry Queue ──────────────────────────────────────────────────────────────
+// All queue read-modify-writes go through this mutex so concurrent uploads and
+// the alarm-driven flush can't overwrite each other's changes.
+let queueLock = Promise.resolve();
+function withQueue(fn) {
+  const run = queueLock.then(async () => {
+    const { [RETRY_QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(RETRY_QUEUE_KEY);
+    const next = await fn(queue);
+    if (next) await chrome.storage.local.set({ [RETRY_QUEUE_KEY]: next });
+  });
+  queueLock = run.catch(() => {});
+  return run;
+}
+
 async function enqueueForRetry(payload) {
-  const { [RETRY_QUEUE_KEY]: queue = [] } =
-    await chrome.storage.local.get(RETRY_QUEUE_KEY);
-
-  if (queue.some(i => i.payload.submissionId === payload.submissionId)) return;
-  if (queue.length >= MAX_QUEUE_SIZE) queue.shift();
-
-  queue.push({ payload, enqueuedAt: Date.now(), attempts: 0 });
-  await chrome.storage.local.set({ [RETRY_QUEUE_KEY]: queue });
+  await withQueue(queue => {
+    if (queue.some(i => i.payload.submissionId === payload.submissionId)) return null;
+    if (queue.length >= MAX_QUEUE_SIZE) queue.shift();
+    queue.push({ payload, enqueuedAt: Date.now(), attempts: 0 });
+    return queue;
+  });
   ensureRetryAlarm();
 }
 
+function removeFromQueue(submissionId) {
+  return withQueue(queue => queue.filter(i => i.payload.submissionId !== submissionId));
+}
+
+let flushing = false;
 async function processRetryQueue() {
-  const { [RETRY_QUEUE_KEY]: queue = [] } =
-    await chrome.storage.local.get(RETRY_QUEUE_KEY);
-  if (!queue.length) return;
+  if (flushing) return;
+  flushing = true;
+  try {
+    const { [RETRY_QUEUE_KEY]: snapshot = [] } =
+      await chrome.storage.local.get(RETRY_QUEUE_KEY);
+    if (!snapshot.length) return;
 
-  console.log(`[CodeInsight BG] Retry queue: ${queue.length} items`);
-  const remaining = [];
+    console.log(`[CodeInsight BG] Retry queue: ${snapshot.length} items`);
 
-  for (const item of queue) {
-    if (Date.now() - item.enqueuedAt > 86_400_000) continue; // drop after 24h
-    const result = await handleUpload(item.payload);
-    if (!result.success && !result.error?.includes('Auth failed')) {
-      item.attempts = (item.attempts || 0) + 1;
-      if (item.attempts < 10) remaining.push(item);
+    for (const item of snapshot) {
+      const id = item.payload.submissionId;
+      if (Date.now() - item.enqueuedAt > 86_400_000) { // drop after 24h
+        await removeFromQueue(id);
+        continue;
+      }
+      const result = await attemptUpload(item.payload);
+      if (result.success || result.permanent) {
+        await removeFromQueue(id);
+        continue;
+      }
+      // Not logged in / token rejected: keep the item (without burning an
+      // attempt) and stop — every other item would fail the same way.
+      if (result.error?.includes('Auth') || result.error?.includes('Not authenticated')) break;
+
+      await withQueue(queue => {
+        const entry = queue.find(i => i.payload.submissionId === id);
+        if (!entry) return null;
+        entry.attempts = (entry.attempts || 0) + 1;
+        return entry.attempts < 10 ? queue : queue.filter(i => i !== entry);
+      });
     }
+  } finally {
+    flushing = false;
   }
-
-  await chrome.storage.local.set({ [RETRY_QUEUE_KEY]: remaining });
 }
 
 function ensureRetryAlarm() {

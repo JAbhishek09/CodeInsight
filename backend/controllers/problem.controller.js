@@ -1,5 +1,17 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import Problem from '../models/Problem.js';
+import { computeAiAnalysisMeta } from '../utils/aiMeta.js';
+import { patternForProblem } from '../services/patternService.js';
+import { diagnoseProblem } from '../services/diagnosisService.js';
+import { latestFeedback } from '../services/predictionService.js';
+import { escapeRegex, listProblems, parseListQuery } from '../services/problemListService.js';
+
+// Fields a user may edit via PUT /api/problems/:id. Ownership, submissions and
+// AI analysis state are server-managed and must never come from the request body.
+const EDITABLE_FIELDS = [
+  'title', 'url', 'difficulty', 'tags', 'status', 'category',
+  'notes', 'timeComplexity', 'spaceComplexity',
+];
 
 /**
  * @desc    Create a manual problem entry
@@ -33,17 +45,31 @@ export const createProblem = asyncHandler(async (req, res) => {
 /**
  * @desc    Get all problems for the logged-in user
  * @route   GET /api/problems
+ *          GET /api/problems?view=list — paginated, lightweight (no code or
+ *          analysis bodies); see docs/analytics-api.md
  * @access  Private
  */
 export const getProblems = asyncHandler(async (req, res) => {
+  if (req.query.view === 'list') {
+    let opts;
+    try {
+      opts = parseListQuery(req.query);
+    } catch (err) {
+      res.status(err.statusCode || 400);
+      throw err;
+    }
+    const result = await listProblems(req.user._id, opts);
+    return res.status(200).json({ success: true, ...result });
+  }
+
   const { difficulty, status, category, search, platform } = req.query;
   const query = { user: req.user._id };
 
   if (difficulty) query.difficulty = difficulty;
   if (status) query.status = status;
   if (platform) query.platform = platform;
-  if (category) query.category = { $regex: category, $options: 'i' };
-  if (search) query.title = { $regex: search, $options: 'i' };
+  if (category) query.category = { $regex: escapeRegex(category), $options: 'i' };
+  if (search) query.title = { $regex: escapeRegex(search), $options: 'i' };
 
   const problems = await Problem.find(query).sort({ updatedAt: -1 });
 
@@ -72,7 +98,15 @@ export const getProblemById = asyncHandler(async (req, res) => {
     throw new Error('Not authorized to access this problem');
   }
 
-  res.status(200).json({ success: true, data: problem });
+  const data = problem.toObject();
+  data.aiAnalysisMeta = computeAiAnalysisMeta(problem);
+  data.pattern = patternForProblem(problem);
+  const feedback = problem.platform === 'leetcode' && problem.platformProblemId
+    ? await latestFeedback(req.user._id, problem.platformProblemId)
+    : null;
+  data.diagnosis = diagnoseProblem(problem, feedback);
+
+  res.status(200).json({ success: true, data });
 });
 
 /**
@@ -93,7 +127,12 @@ export const updateProblem = asyncHandler(async (req, res) => {
     throw new Error('Not authorized to modify this problem');
   }
 
-  problem = await Problem.findByIdAndUpdate(req.params.id, req.body, {
+  const updates = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (req.body?.[field] !== undefined) updates[field] = req.body[field];
+  }
+
+  problem = await Problem.findByIdAndUpdate(req.params.id, { $set: updates }, {
     new: true,
     runValidators: true,
   });
