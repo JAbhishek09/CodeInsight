@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './routes/auth.routes.js';
@@ -17,13 +20,18 @@ import { errorHandler } from './middleware/error.middleware.js';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Behind a hosting proxy (Render, Railway, nginx…) rate limits must key on the
+// real client IP. TRUST_PROXY=1 trusts one hop.
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 
 // ─── Allowed Origins ──────────────────────────────────────────────────────────
 
+// CLIENT_URL may list several origins, comma-separated.
 export const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  'http://localhost:5000',
-  'http://localhost:5174',
+  ...(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
+  ...(isProduction ? [] : ['http://localhost:5000', 'http://localhost:5174']),
 ];
 
 /**
@@ -80,7 +88,7 @@ app.use(express.json({ limit: '1mb' }));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
 
-app.get('/', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'CodeInsight API',
@@ -113,7 +121,18 @@ app.use('/api/predictions', predictionRoutes);
 app.use('/api/tutor',      tutorRoutes);
 app.use('/api/practice',   practiceRoutes);
 app.use('/api/import',     importRoutes);
-app.use('/api/diagnose',   diagnoseRoutes);   // DEV ONLY — remove before production
+if (!isProduction) app.use('/api/diagnose', diagnoseRoutes);   // dev-only diagnostics
+
+// ─── Web app (production, single origin) ─────────────────────────────────────
+// With SERVE_CLIENT=true the API also serves the built frontend (../dist), so
+// the app's relative /api calls work without a separate host or proxy.
+
+const clientDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
+if (process.env.SERVE_CLIENT === 'true' && fs.existsSync(path.join(clientDir, 'index.html'))) {
+  app.use(express.static(clientDir, { index: false, maxAge: '1h' }));
+  app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(clientDir, 'index.html')));
+}
+app.use('/api', (req, res) => res.status(404).json({ success: false, message: 'Not found' }));
 
 // ─── Error Handler ────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Link2, Loader2, LogOut, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
@@ -8,6 +8,8 @@ import { useAnalytics } from '../hooks/useAnalytics';
 import { updateProfile } from '../api/auth.api';
 import ProfileInput from '../components/ProfileInput';
 import HistoryImport from '../components/HistoryImport';
+import ExtensionSetup from '../components/ExtensionSetup';
+import { useToday } from '../hooks/usePractice';
 import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -135,6 +137,14 @@ export default function ProfilePage() {
     qc.invalidateQueries({ queryKey: ['analytics'] });
   };
 
+  const today = useToday();
+  const { hash } = useLocation();
+  // /profile?tab=connections#extension → scroll to the extension steps
+  useEffect(() => {
+    if (hash !== '#extension') return;
+    const t = setTimeout(() => document.getElementById('extension')?.scrollIntoView({ block: 'start' }), 300);
+    return () => clearTimeout(t);
+  }, [hash, tab]);
   const initials = (user?.name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 
   return (
@@ -188,6 +198,9 @@ export default function ProfilePage() {
           {user?.lastSyncedAt && (
             <p className="text-xs text-muted-foreground">Last synced {relativeTime(user.lastSyncedAt)}</p>
           )}
+          <Panel title="Browser extension">
+            <ExtensionSetup connected={today.data?.onboarding.extension} />
+          </Panel>
         </TabsContent>
 
         <TabsContent value="import" className="pt-4">

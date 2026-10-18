@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { useAuth } from '../hooks/useAuth';
 import { useCompleteReview, useToday } from '../hooks/usePractice';
 import QueryError from '../components/QueryError';
+import GetStarted from '../components/home/GetStarted';
+import RecognitionTrend from '../components/home/RecognitionTrend';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -118,7 +120,6 @@ export default function HomePage() {
   const { user } = useAuth();
   const q = useToday();
   const d = q.data;
-  const startedAny = d?.patterns.some((p) => p.solved > 0) ?? false;
 
   return (
     <div className="space-y-8">
@@ -149,12 +150,7 @@ export default function HomePage() {
 
       {!d && !q.error ? <HomeSkeleton /> : d && (
         <>
-          {!startedAny && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong p-4">
-              <p className="text-sm text-muted-foreground">Import your LeetCode history so the plan knows what you’ve already solved.</p>
-              <Button size="sm" variant="outline" asChild><Link to="/profile?tab=import">Import history</Link></Button>
-            </div>
-          )}
+          <GetStarted status={d.onboarding} />
 
           {d.focus && <FocusCard focus={d.focus} />}
 
@@ -198,6 +194,8 @@ export default function HomePage() {
               </ul>
             </section>
           )}
+
+          <RecognitionTrend />
 
           <section aria-labelledby="patterns-title" className="space-y-3">
             <div className="flex items-baseline justify-between">

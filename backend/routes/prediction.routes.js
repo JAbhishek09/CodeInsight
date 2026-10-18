@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { protect } from '../middleware/auth.middleware.js';
-import { createPrediction, getLatestFeedback, getPredictionStats } from '../controllers/prediction.controller.js';
+import { createPrediction, getLatestFeedback, getPredictionStats, getWeeklyRecognition } from '../controllers/prediction.controller.js';
 
 const router = express.Router();
 
@@ -15,5 +15,6 @@ const predictionLimiter = rateLimit({
 router.post('/', protect, predictionLimiter, createPrediction);
 router.get('/latest', protect, getLatestFeedback);
 router.get('/stats', protect, getPredictionStats);
+router.get('/weekly', protect, getWeeklyRecognition);
 
 export default router;

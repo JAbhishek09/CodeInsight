@@ -168,18 +168,16 @@
   <!-- Auth section (shown when not connected) -->
   <div id="auth-section">
     <p class="hint">
-      Get your token from <a href="http://localhost:5173" target="_blank">CodeInsight</a>:
+      Get both values from <a href="http://localhost:5173/profile?tab=connections#extension" target="_blank">CodeInsight</a>:
     </p>
     <ol class="steps" style="margin-bottom: 10px;">
-      <li>Log in to CodeInsight in your browser.</li>
-      <li>Open DevTools → Console, run:<br>
-        <code>localStorage.getItem('codeinsight_token')</code>
-      </li>
-      <li>Copy the printed value and paste below.</li>
+      <li>Sign in to CodeInsight.</li>
+      <li>Open Profile → Connections → Browser extension.</li>
+      <li>Copy the sign-in token and the server address into the boxes below.</li>
     </ol>
 
     <div class="field-group">
-      <label for="jwt-input">JWT Token</label>
+      <label for="jwt-input">Sign-in token</label>
       <div class="input-row">
         <input type="password" id="jwt-input" placeholder="Paste token here…" autocomplete="off" />
         <button class="toggle-btn" id="toggle-jwt" type="button">Show</button>
@@ -187,7 +185,7 @@
     </div>
 
     <div class="field-group">
-      <label for="api-base-input">Backend URL</label>
+      <label for="api-base-input">Server address</label>
       <input type="text" id="api-base-input" placeholder="http://localhost:5000" value="http://localhost:5000" />
     </div>
 

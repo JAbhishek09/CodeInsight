@@ -36,7 +36,7 @@ export function useDrillAnswer() {
     mutationFn: async ({ slug, predicted }: { slug: string; predicted: string }) =>
       (await api.post('/predictions', { slug, predicted, source: 'drill' })).data?.data?.feedback as PatternFeedback,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['predictions', 'stats'] });
+      qc.invalidateQueries({ queryKey: ['predictions'] });
       qc.invalidateQueries({ queryKey: ['practice'] });
     },
   });

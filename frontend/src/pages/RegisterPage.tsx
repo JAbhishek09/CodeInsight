@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { getAuthConfig } from '../api/auth.api';
 import AuthLayout, { Field, FormError, PasswordInput } from '@/components/auth/AuthLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,9 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [goal, setGoal] = useState(1);
+  const [invite, setInvite] = useState('');
+  const [inviteRequired, setInviteRequired] = useState(false);
+  useEffect(() => { getAuthConfig().then((c) => setInviteRequired(Boolean(c?.inviteRequired))).catch(() => {}); }, []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,8 +40,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
     }
     try {
       setSubmitting(true);
-      await register({ name: name.trim(), email: email.trim(), password, targetDailySolved: goal });
-      onNavigate('/profile?tab=import');
+      await register({ name: name.trim(), email: email.trim(), password, targetDailySolved: goal, ...(inviteRequired ? { invite: invite.trim() } : {}) });
+      onNavigate('/home');
     } catch (err) {
       setError((err as Error).message || "Couldn't create your account. Try again.");
     } finally {
@@ -48,11 +52,16 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
   return (
     <AuthLayout
       title="Create your account"
-      subtitle="Then import your LeetCode history — it takes a few minutes."
+      subtitle="Learn to spot the pattern behind every problem."
       footer={<>Already have an account? <Link to="/login" className="font-medium text-primary hover:underline">Sign in</Link></>}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <FormError message={error} />
+        {inviteRequired && (
+          <Field id="invite" label="Invite code" hint="From the person running the pilot.">
+            <Input id="invite" required autoComplete="off" value={invite} onChange={(e) => setInvite(e.target.value)} />
+          </Field>
+        )}
         <Field id="name" label="Name">
           <Input id="name" autoComplete="name" required maxLength={50} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" />
         </Field>

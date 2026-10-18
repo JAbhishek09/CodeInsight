@@ -6,6 +6,18 @@ import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 
+/** Pilot mode: when PILOT_INVITE_CODE is set, sign-up needs that code. */
+const inviteCode = () => (process.env.PILOT_INVITE_CODE || '').trim();
+
+/**
+ * @desc    What the sign-up screen needs to know
+ * @route   GET /api/auth/config
+ * @access  Public
+ */
+export const getAuthConfig = (req, res) => {
+  res.status(200).json({ success: true, data: { inviteRequired: Boolean(inviteCode()) } });
+};
+
 /**
  * @desc    Register a new user
  * @route   POST /api/auth/register
@@ -13,11 +25,15 @@ import nodemailer from 'nodemailer';
  */
 export const registerUser = asyncHandler(async (req, res) => {
   
-  const { name, email, password, targetDailySolved } = req.body;
+  const { name, email, password, targetDailySolved, invite } = req.body;
 
   if (!name || !email || !password) {
     res.status(400);
     throw new Error('Please include name, email, and password');
+  }
+  if (inviteCode() && String(invite ?? '').trim().toLowerCase() !== inviteCode().toLowerCase()) {
+    res.status(403);
+    throw new Error('That invite code isn’t right. Ask the person running the pilot for it.');
   }
 
   const userExists = await User.findOne({ email });
@@ -26,7 +42,6 @@ export const registerUser = asyncHandler(async (req, res) => {
     throw new Error('A user already exists with this email address');
   }
 
-  console.log('[REGISTER] Creating user:', { name, email, targetDailySolved });
   
   const user = await User.create({
     name,
@@ -34,8 +49,6 @@ export const registerUser = asyncHandler(async (req, res) => {
     password,
     targetDailySolved: targetDailySolved ? Number(targetDailySolved) : 1,
   });
-
-  console.log('[REGISTER] User created successfully:', { id: user._id });
 
   if (user) {
     res.status(201).json({

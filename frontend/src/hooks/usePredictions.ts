@@ -1,11 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axiosInstance';
-import type { PatternFeedback, PredictionStats } from '../types/pattern';
+import type { PatternFeedback, PredictionStats, RecognitionWeek } from '../types/pattern';
 
 export function usePredictionStats() {
   return useQuery({
     queryKey: ['predictions', 'stats'],
     queryFn: async () => (await api.get('/predictions/stats')).data?.data as PredictionStats,
+  });
+}
+
+/** Recognition accuracy per week, oldest first, in the browser's time zone. */
+export function useWeeklyRecognition(weeks = 8) {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  return useQuery({
+    queryKey: ['predictions', 'weekly', tz, weeks],
+    queryFn: async () => (await api.get('/predictions/weekly', { params: { tz, weeks } })).data?.data as RecognitionWeek[],
   });
 }
 

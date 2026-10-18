@@ -7,6 +7,9 @@ import asyncHandler from '../utils/asyncHandler.js';
 import {
   isValidPrediction, isValidSlug, latestFeedback, predictionStats, recordPrediction,
 } from '../services/predictionService.js';
+import { DEFAULT_WEEKS, weeklyRecognition } from '../services/pilotService.js';
+import { isValidTimeZone } from '../services/analyticsService.js';
+import User from '../models/User.js';
 
 /**
  * @desc    Save a pattern guess. source=extension waits for the submission;
@@ -20,6 +23,7 @@ export const createPrediction = asyncHandler(async (req, res) => {
   if (!isValidPrediction(predicted)) { res.status(400); throw new Error('Unknown pattern.'); }
   if (!['extension', 'app', 'drill'].includes(source)) { res.status(400); throw new Error('Invalid source.'); }
 
+  if (source === 'extension') await User.updateOne({ _id: req.user._id }, { $set: { extensionSeenAt: new Date() } });
   const { prediction, feedback } = await recordPrediction({ userId: req.user._id, slug, predicted, source });
   res.status(201).json({ success: true, data: { predictionId: String(prediction._id), feedback } });
 });
@@ -42,4 +46,16 @@ export const getLatestFeedback = asyncHandler(async (req, res) => {
  */
 export const getPredictionStats = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: await predictionStats(req.user._id) });
+});
+
+/**
+ * @desc    Recognition accuracy per week (all guesses and first try per problem)
+ * @route   GET /api/predictions/weekly?tz=Asia/Kolkata&weeks=8
+ * @access  Private
+ */
+export const getWeeklyRecognition = asyncHandler(async (req, res) => {
+  const tz = typeof req.query.tz === 'string' && req.query.tz ? req.query.tz : 'UTC';
+  if (!isValidTimeZone(tz)) { res.status(400); throw new Error('Invalid tz.'); }
+  const weeks = Math.min(26, Math.max(1, Number.parseInt(req.query.weeks, 10) || DEFAULT_WEEKS));
+  res.status(200).json({ success: true, data: await weeklyRecognition(req.user._id, { tz, weeks }) });
 });

@@ -8,6 +8,7 @@ import { resolveOnSubmission } from '../services/predictionService.js';
 import { tryConsumeAiQuota } from '../utils/aiQuota.js';
 import { diagnoseProblem } from '../services/diagnosisService.js';
 import { scheduleReview } from '../services/reviewService.js';
+import User from '../models/User.js';
 
 /**
  * BUG-INJ-002 FIX: Nonce deduplication is now backed by MongoDB (via the Nonce
@@ -77,6 +78,8 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error(`Submission is from LeetCode user "${lcUser}", but this account is linked to "${handle}".`);
   }
+
+  await User.updateOne({ _id: userId }, { $set: { extensionSeenAt: new Date() } });
 
   // ── 1. Replay attack prevention (MongoDB-backed nonce) ───────────────────────
   const { _nonce, _ts } = req.body;

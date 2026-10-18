@@ -47,6 +47,10 @@ const UserSchema = new mongoose.Schema(
     },
 
     // ─── CodeInsight: Sync State ───────────────────────────────────────────────
+    extensionSeenAt: {   // last request from the browser extension (onboarding)
+      type: Date,
+      default: null,
+    },
     lastSyncedAt: {
       type: Date,
       default: null,

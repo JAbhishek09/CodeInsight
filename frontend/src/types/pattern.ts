@@ -144,6 +144,27 @@ export interface TodayPlan {
   reviews: { due: number; upcomingThisWeek: number };
   recognition: { attempts: number; accuracy: number | null };
   patterns: { key: string; name: string; solved: number; total: number; accuracy: number | null }[];
+  onboarding: Onboarding;
+}
+
+/** Getting-started steps; see backend/services/pilotService.js. */
+export interface Onboarding {
+  leetcodeLinked: boolean;
+  imported: boolean;
+  drilled: boolean;
+  extension: boolean;
+  done: boolean;
+}
+
+/** One week of recognition accuracy (Monday start). firstTry ignores repeat guesses on a problem. */
+export interface RecognitionWeek {
+  weekStart: string;
+  attempts: number;
+  correct: number;
+  accuracy: number | null;
+  firstTry: { attempts: number; correct: number; accuracy: number | null };
+  bySource: { drill: number; extension: number; app: number };
+  activeDays: number;
 }
 
 /** See backend/services/drillService.js drillDeck(). */

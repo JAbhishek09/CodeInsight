@@ -75,10 +75,10 @@ $('toggle-jwt').addEventListener('click', () => {
 // Save settings
 $('save-btn').addEventListener('click', async () => {
   const jwt = $('jwt-input').value.trim();
-  const apiBase = $('api-base-input').value.trim();
+  const apiBase = $('api-base-input').value.trim().replace(/\/+$/, '');
 
   if (!jwt) {
-    showMsg('Please paste your JWT token.', 'err');
+    showMsg('Please paste your sign-in token.', 'err');
     return;
   }
 

@@ -12,7 +12,11 @@ export interface RegisterPayload {
   email: string;
   password: string;
   targetDailySolved?: number;
+  invite?: string;
 }
+
+/** Sign-up settings (pilot invite code). */
+export const getAuthConfig = async () => (await api.get('/auth/config')).data?.data as { inviteRequired: boolean };
 
 export const login = async (credentials: LoginPayload) => {
   const res = await api.post('/auth/login', credentials);

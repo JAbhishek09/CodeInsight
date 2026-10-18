@@ -16,6 +16,7 @@ import { listPatterns, progressBySlug } from './patternService.js';
 import { predictionStats } from './predictionService.js';
 import { reviewQueue, seedReviewsFromHistory } from './reviewService.js';
 import { dayInZone } from './analyticsService.js';
+import { onboardingStatus } from './pilotService.js';
 
 const PLAN_SIZE = 4;
 const MAX_REVIEWS = 2;
@@ -60,7 +61,9 @@ const item = (kind, m, progress, reason, extra = {}) => ({
 export async function todayPlan(userId, { tz = 'UTC', now = new Date() } = {}) {
   await seedReviewsFromHistory(userId, now);
 
-  const [overview, stats, queue] = await Promise.all([listPatterns(userId), predictionStats(userId), reviewQueue(userId, now)]);
+  const [overview, stats, queue, onboarding] = await Promise.all([
+    listPatterns(userId), predictionStats(userId), reviewQueue(userId, now), onboardingStatus(userId),
+  ]);
   const accMap = new Map(stats.perPattern.filter((p) => p.accuracy !== null).map((p) => [p.key, p]));
   const focus = chooseFocus(overview.patterns, accMap);
   const progress = await progressBySlug(userId, PROBLEM_PATTERNS.map((p) => p.slug));
@@ -128,5 +131,6 @@ export async function todayPlan(userId, { tz = 'UTC', now = new Date() } = {}) {
       accuracy: accMap.get(p.key)?.accuracy ?? null,
     })),
     allPatterns: PATTERNS.length,
+    onboarding,
   };
 }
