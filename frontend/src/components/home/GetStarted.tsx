@@ -22,20 +22,17 @@ export default function GetStarted({ status }: { status: Onboarding }) {
   const hide = () => { setHidden(true); try { localStorage.setItem(HIDE_KEY, '1'); } catch { /* ignore */ } };
 
   return (
-    <section aria-labelledby="start-title" className="rounded-2xl border border-primary/30 bg-primary/5 p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 id="start-title" className="text-base font-semibold text-foreground">Get started</h2>
-          <p className="text-xs text-muted-foreground">{doneCount} of {STEPS.length} done</p>
+    <section aria-labelledby="start-title" className="rounded-xl border border-border bg-surface-1 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-2">
+          <h2 id="start-title" className="text-sm font-semibold text-foreground">Get set up</h2>
+          <p className="text-xs tabular-nums text-muted-foreground">{doneCount} of {STEPS.length}</p>
         </div>
         <button type="button" onClick={hide} aria-label="Hide getting started" className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
           <X className="size-4" />
         </button>
       </div>
-      <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface-3">
-        <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${(doneCount / STEPS.length) * 100}%` }} />
-      </div>
-      <ol className="mt-4 grid gap-2 sm:grid-cols-2">
+      <ol className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {STEPS.map((s, i) => {
           const done = status[s.key];
           const isNext = s === next;
@@ -46,8 +43,8 @@ export default function GetStarted({ status }: { status: Onboarding }) {
                 aria-disabled={done}
                 tabIndex={done ? -1 : undefined}
                 className={cn(
-                  'group flex items-center gap-3 rounded-lg border p-3 transition-colors',
-                  done ? 'pointer-events-none border-transparent' : 'border-border bg-surface-1 hover:border-primary/50',
+                  'group flex h-full items-center gap-3 rounded-lg border p-3 transition-colors',
+                  done ? 'pointer-events-none border-transparent bg-surface-2/60' : 'border-border bg-surface-2 hover:border-primary/50',
                   isNext && 'border-primary/50'
                 )}
               >
