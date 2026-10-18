@@ -219,7 +219,12 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   let aiInvalidated = false;
   let aiMessage = 'AI cache unchanged';
 
-  if (verdict === 'Accepted') {
+  // Automatic AI reviews spend the shared AI allowance on every accepted
+  // submission; off unless AI_AUTO_REVIEW=true. Students can still run a
+  // review from the problem page (the old one shows as out of date).
+  if (verdict === 'Accepted' && process.env.AI_AUTO_REVIEW !== 'true') {
+    aiMessage = 'AI review available on demand in CodeInsight.';
+  } else if (verdict === 'Accepted') {
     const incomingHash = md5(code);
     const cachedHash = problem.aiAnalysis?.codeSnapshotHash;
 

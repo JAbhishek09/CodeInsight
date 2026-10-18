@@ -7,7 +7,7 @@ import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import AiUsage from '../models/AiUsage.js';
 import generateToken from '../utils/generateToken.js';
-import { __setGeneratorForTests } from '../services/aiService.js';
+import { __setGeneratorForTests, modelChain } from '../services/aiService.js';
 import { diagnoseProblem } from '../services/diagnosisService.js';
 
 let server;
@@ -211,13 +211,13 @@ describe('diagnosis — single failure', () => {
 });
 
 describe('AI provider errors', () => {
-  test('provider quota errors are not retried and show a plain message', async () => {
-    let calls = 0;
-    __setGeneratorForTests(async () => { calls += 1; throw new Error('[429 Too Many Requests] You exceeded your current quota, please check your plan and billing details.'); });
+  test('provider quota errors are not retried on a model, and show a plain message once every model is out', async () => {
+    const tried = [];
+    __setGeneratorForTests(async ({ model }) => { tried.push(model); throw new Error('[429 Too Many Requests] You exceeded your current quota, please check your plan and billing details.'); });
     const doc = await lc('two-sum', [sub('2026-10-01', 'TLE', { code: 'a' })]);
     const r = await call('POST', `/api/tutor/${doc._id}`, {});
-    assert.equal(calls, 1);
-    assert.equal(r.body.message, 'The AI service has reached its daily limit. Try again in a few hours.');
+    assert.deepEqual(tried, modelChain(), 'each model tried once');
+    assert.equal(r.body.message, 'The free AI allowance is used up for today. Everything else works — try the AI again tomorrow.');
     assert.equal(await AiUsage.countDocuments({ user: user._id }), 0, 'refunded');
   });
 });

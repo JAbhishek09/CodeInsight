@@ -33,12 +33,19 @@ the production `MONGO_URI` in your local shell, not in a committed file.
 - [ ] `JWT_SECRET`: 32+ random characters
       (`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`).
       Production refuses to start with a shorter one.
-- [ ] **Gemini quota.** Every student shares one key. The free tier allows
-      about 20 requests/day for `gemini-2.5-flash-lite` *for the whole key*,
-      and each extension submission also triggers a background AI review. For
-      10 students either enable billing on the key (cost is cents/day at this
-      size) or set `AI_DAILY_LIMIT=2`. Everything except the AI tutor and AI
-      reviews works without AI.
+- [ ] **AI on the free tier (no billing needed).** The pilot's core loop —
+      pattern guesses, feedback, drills, reviews, the daily plan — uses no AI.
+      Only the "why did this fail?" tutor and code reviews do, and they run
+      only when a student asks. One free Gemini key is shared by everyone:
+      - Each free model has its own small daily allowance, so the app walks a
+        chain of models (`GEMINI_MODELS`): flash-lite models first, then
+        `gemini-2.5-flash`, then Gemma (slower, ~15 s, but its own allowance).
+        A model that runs out is skipped for an hour.
+      - Automatic reviews of every accepted submission are **off**
+        (`AI_AUTO_REVIEW` unset). Turning them on would drain the key in a day.
+      - Set `AI_DAILY_LIMIT=3` so one student can't use everyone's share.
+      - When every model is out, students see "The free AI allowance is used
+        up for today. Everything else works" — nothing else breaks.
 - [ ] **Atlas network access** allows the host's outbound IPs (or
       `0.0.0.0/0` for the pilot, with a strong DB password).
 - [ ] Pick an invite code for `PILOT_INVITE_CODE`.
@@ -66,7 +73,8 @@ Environment variables (see `backend/.env.example`):
 | `MONGO_URI` | production Atlas URI |
 | `JWT_SECRET` | 32+ random characters |
 | `JWT_EXPIRES_IN` | `30d` (students stay signed in through the pilot) |
-| `GEMINI_API_KEY`, `AI_DAILY_LIMIT` | see quota note above |
+| `GEMINI_API_KEY` | a free key from aistudio.google.com |
+| `AI_DAILY_LIMIT` | `3` (see the AI note above); leave `GEMINI_MODELS` and `AI_AUTO_REVIEW` unset |
 | `TRUST_PROXY` | `1` on Render/Railway/Fly (behind one proxy) |
 | `PILOT_INVITE_CODE` | your code |
 | `DNS_SERVERS` | `system` if the host's DNS resolves Atlas SRV records (most do) |
@@ -135,4 +143,4 @@ Send each student:
   longer than it did locally.
 - **Free hosting tiers sleep.** The first request after idle can take ~30 s.
   The extension queues submissions and retries, so nothing is lost.
-- **Gemini quota** is shared by everyone (see above).
+- **AI allowance** is one free key shared by everyone; when it runs out the AI tutor and reviews pause until the next day (see above).

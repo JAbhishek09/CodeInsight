@@ -6,31 +6,55 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { md5 } from '../utils/hashCode.js';
 
 // ─── Gemini client ────────────────────────────────────────────────────────────
-const MODEL_NAME = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+// Free-tier keys get a separate daily allowance per model, so requests walk a
+// chain of models: when one is out of quota the next one answers.
+// GEMINI_MODELS overrides the chain (comma-separated, first = preferred);
+// GEMINI_MODEL alone still works and goes first.
+// Gemma is last: slower, but a separate free allowance.
+const DEFAULT_CHAIN = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemma-4-26b-a4b-it'];
+export function modelChain() {
+  const list = process.env.GEMINI_MODELS
+    ? process.env.GEMINI_MODELS.split(',')
+    : [process.env.GEMINI_MODEL, ...DEFAULT_CHAIN];
+  return [...new Set(list.map((m) => m?.trim()).filter(Boolean))];
+}
 const REQUEST_TIMEOUT_MS = 30_000;
 // Long code costs tokens and rarely helps; the start of a solution carries the idea.
 export const MAX_CODE_CHARS = 20_000;
 
 let _genAI = null;
-const _models = new Map(); // systemInstruction → model
+const _models = new Map(); // `${model}\n${systemInstruction}` → model handle
 
-function getModel(systemInstruction) {
-  if (_models.has(systemInstruction)) return _models.get(systemInstruction);
+/** Gemma models take no system instruction or JSON mode: fold both into the prompt. */
+const isGemma = (name) => name.startsWith('gemma');
+
+function getModel(name, systemInstruction) {
+  const key = `${name}\n${systemInstruction}`;
+  if (_models.has(key)) return _models.get(key);
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY is not set in environment variables.');
   }
   _genAI ??= new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  const model = _genAI.getGenerativeModel({
-    model: MODEL_NAME,
-    systemInstruction,
-    generationConfig: { responseMimeType: 'application/json' },
-  });
-  _models.set(systemInstruction, model);
+  const model = isGemma(name)
+    ? _genAI.getGenerativeModel({ model: name })
+    : _genAI.getGenerativeModel({ model: name, systemInstruction, generationConfig: { responseMimeType: 'application/json' } });
+  _models.set(key, model);
   return model;
+}
+
+async function callModel(name, system, prompt) {
+  if (_generate) return _generate({ system, prompt, model: name });
+  const input = isGemma(name) ? `${system}\n\n${prompt}\n\nReply with the JSON object only.` : prompt;
+  const { response } = await getModel(name, system).generateContent(input, { timeout: REQUEST_TIMEOUT_MS });
+  // Thinking models (Gemma) return their reasoning as separate "thought" parts: keep only the answer.
+  const parts = response.candidates?.[0]?.content?.parts;
+  return parts ? parts.filter((p) => !p.thought).map((p) => p.text ?? '').join('') : response.text();
 }
 
 /** The provider's own daily/billing quota — retrying won't help for hours. */
 const isProviderQuota = (err) => /quota|billing|RESOURCE_EXHAUSTED/i.test(err?.message ?? '');
+/** This model can't be used with this key (retired, renamed, not on the free tier). */
+const isUnavailableModel = (err) => /\b404\b|not found|is not supported|not available|permission denied|\b403\b/i.test(err?.message ?? '');
 
 /** Rate limits, server errors and timeouts are worth retrying; bad requests are not. */
 function isTransient(err) {
@@ -40,35 +64,52 @@ function isTransient(err) {
   return /timeout|timed out|ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(err?.message ?? '');
 }
 
+// A model that reported its quota as used up is skipped for a while, so later
+// requests go straight to the next model instead of failing first.
+const QUOTA_REST_MS = 60 * 60 * 1000;
+const UNAVAILABLE_REST_MS = 24 * 60 * 60 * 1000;
+const _restingUntil = new Map(); // model → timestamp
+const resting = (m) => (_restingUntil.get(m) ?? 0) > Date.now();
+
 // Tests replace the model call with a stub (see test/tutor.test.js).
 let _generate = null;
-export function __setGeneratorForTests(fn) { _generate = fn; }
+export function __setGeneratorForTests(fn) { _generate = fn; _restingUntil.clear(); }
 
 /**
- * Send a prompt and parse the JSON reply. Retries transient failures up to 3
- * times; each call is bounded by a timeout.
+ * Send a prompt and parse the JSON reply. Walks the model chain; on each model
+ * retries transient failures up to 3 times, each call bounded by a timeout.
  */
 export async function generateJson({ system, prompt }) {
   let rawText;
   let lastErr;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      rawText = _generate
-        ? await _generate({ system, prompt })
-        : (await getModel(system).generateContent(prompt, { timeout: REQUEST_TIMEOUT_MS })).response.text();
-      break;
-    } catch (err) {
-      lastErr = err;
-      console.warn(`[AI] Gemini attempt ${attempt}/3 failed:`, err.message);
-      if (!isTransient(err) || attempt === 3) break;
-      await new Promise((r) => setTimeout(r, 1000 * attempt));
+  let sawQuota = false;
+  const chain = modelChain();
+  const available = chain.filter((m) => !resting(m));
+  if (available.length === 0) sawQuota = true;
+
+  for (const name of available) {
+    let moveOn = false; // only quota / unusable-model errors are worth another model
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        rawText = await callModel(name, system, prompt);
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[AI] ${name} attempt ${attempt}/3 failed:`, err.message);
+        if (isProviderQuota(err)) { sawQuota = true; moveOn = true; _restingUntil.set(name, Date.now() + QUOTA_REST_MS); break; }
+        if (isUnavailableModel(err)) { moveOn = true; _restingUntil.set(name, Date.now() + UNAVAILABLE_REST_MS); break; }
+        if (!isTransient(err) || attempt === 3) break;
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
     }
+    if (rawText || !moveOn) break;
   }
+
   if (!rawText) {
     // Full provider details go to the server log, a plain message to the student.
-    console.error('[AI] Gemini request failed:', lastErr?.message);
-    if (isProviderQuota(lastErr)) {
-      throw new Error('The AI service has reached its daily limit. Try again in a few hours.');
+    console.error('[AI] All models failed:', lastErr?.message ?? 'every model is resting after a quota error');
+    if (sawQuota) {
+      throw new Error('The free AI allowance is used up for today. Everything else works — try the AI again tomorrow.');
     }
     throw new Error('The AI service is unavailable right now. Try again in a minute.');
   }
@@ -77,6 +118,9 @@ export async function generateJson({ system, prompt }) {
   try {
     return JSON.parse(cleaned);
   } catch {
+    // Gemma sometimes wraps the JSON in prose
+    const m = cleaned.match(/\{[\s\S]*\}/);
+    try { if (m) return JSON.parse(m[0]); } catch { /* fall through */ }
     throw new Error('The AI returned an unreadable answer. Try again.');
   }
 }
