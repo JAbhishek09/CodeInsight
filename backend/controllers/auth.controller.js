@@ -6,6 +6,9 @@ import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 
+/** Emails are stored lowercased and trimmed; match lookups to that. */
+const normalizeEmail = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : '');
+
 /** Pilot mode: when PILOT_INVITE_CODE is set, sign-up needs that code. */
 const inviteCode = () => (process.env.PILOT_INVITE_CODE || '').trim();
 
@@ -25,7 +28,8 @@ export const getAuthConfig = (req, res) => {
  */
 export const registerUser = asyncHandler(async (req, res) => {
   
-  const { name, email, password, targetDailySolved, invite } = req.body;
+  const { name, password, targetDailySolved, invite } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   if (!name || !email || !password) {
     res.status(400);
@@ -76,7 +80,8 @@ export const registerUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = normalizeEmail(req.body.email);
 
   if (!email || !password) {
     res.status(400);

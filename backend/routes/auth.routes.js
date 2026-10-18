@@ -8,10 +8,13 @@ const router = express.Router();
 /**
  * Strict per-IP limiter for unauthenticated credential endpoints
  * (login / register / password reset) to slow down brute-force attempts.
+ * Only failed attempts count: a class signing in from one shared IP must not
+ * lock itself out.
  */
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: {

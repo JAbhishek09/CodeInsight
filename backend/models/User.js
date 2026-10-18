@@ -13,7 +13,8 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Please provide an email address'],
       match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        // Permissive on purpose: allows +tags, apostrophes and long TLDs.
+        /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)*\.[a-z]{2,}$/i,
         'Please provide a valid email address',
       ],
       lowercase: true,

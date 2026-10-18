@@ -1,4 +1,5 @@
 import { queryClient } from '../lib/queryClient';
+import { ApiError } from '../api/axiosInstance';
 import { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import {
   login as loginApi,
@@ -31,6 +32,9 @@ export interface AuthContextType {
   token: string | null;
   loading: boolean;
   error: string | null;
+  /** Set when the session couldn't be checked (server down, network) — the token is kept. */
+  sessionError: string | null;
+  retrySession: () => Promise<void>;
   login: (credentials: LoginPayload) => Promise<any>;
   register: (userData: RegisterPayload) => Promise<any>;
   logout: () => void;
@@ -47,10 +51,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   );
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   const handleSessionPurge = useCallback(() => {
     logoutApi();
     setUser(null);
+    setSessionError(null);
     queryClient.clear(); // never show the previous account's cached data
     setToken(null);
   }, []);
@@ -64,6 +70,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (response?.success && response?.data) {
           setUser(response.data);
           setToken(activeToken);
+          setSessionError(null);
         } else {
           handleSessionPurge();
         }
@@ -71,8 +78,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(null);
         setToken(null);
       }
-    } catch {
-      handleSessionPurge();
+    } catch (err) {
+      // Only a 401 means the token is bad. Anything else (server restarting,
+      // offline, cold start) keeps the session so the user isn't signed out.
+      if (err instanceof ApiError && err.status === 401) handleSessionPurge();
+      else setSessionError((err as Error).message || 'Couldn’t reach CodeInsight.');
     } finally {
       setLoading(false);
     }
@@ -89,6 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const res = await loginApi(credentials);
       if (res?.success && res?.data?.token) {
         setToken(res.data.token);
+        setSessionError(null);
         const meRes = await getMeApi();
         if (meRes?.success && meRes?.data) setUser(meRes.data);
         return res;
@@ -111,6 +122,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const res = await registerApi(userData);
       if (res?.success && res?.data?.token) {
         setToken(res.data.token);
+        setSessionError(null);
         const meRes = await getMeApi();
         if (meRes?.success && meRes?.data) setUser(meRes.data);
         return res;
@@ -143,7 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, error, login, register, logout, refreshUser, clearError }}
+      value={{ user, token, loading, error, sessionError, retrySession: loadCurrentUser, login, register, logout, refreshUser, clearError }}
     >
       {children}
     </AuthContext.Provider>

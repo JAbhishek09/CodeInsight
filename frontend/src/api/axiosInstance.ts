@@ -2,6 +2,16 @@ import axios from 'axios';
 
 const TOKEN_KEY = 'codeinsight_token';
 
+/** A failed API call. `status` is the HTTP status, or undefined when the server couldn't be reached. */
+export class ApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 const api = axios.create({
   baseURL: '/api',
   // Default timeout: 30s for regular calls.
@@ -50,7 +60,7 @@ api.interceptors.response.use(
     const message =
       error.response?.data?.message || error.message || 'A network error occurred.';
     console.error(`[API] ${error.config?.method?.toUpperCase()} ${error.config?.url}: ${message}`);
-    return Promise.reject(new Error(message));
+    return Promise.reject(new ApiError(message, error.response?.status));
   }
 );
 
