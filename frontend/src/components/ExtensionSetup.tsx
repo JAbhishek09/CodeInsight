@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, ShieldAlert } from 'lucide-react';
+import { Check, Copy, Download, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -43,8 +43,14 @@ function CopyField({ label, value, secret = false }: { label: string; value: str
 export default function ExtensionSetup({ connected }: { connected: boolean | undefined }) {
   const token = (() => { try { return localStorage.getItem(TOKEN_KEY) ?? ''; } catch { return ''; } })();
   const steps = [
-    <>Get the extension folder from the person running the pilot. In Chrome open <code className="font-mono text-xs">chrome://extensions</code>, turn on <b>Developer mode</b>, click <b>Load unpacked</b> and choose the folder.</>,
-    <>Click the CodeInsight icon in Chrome’s toolbar and paste the two values below, then save.</>,
+    <div className="space-y-2">
+      <p><b>Download the extension</b> and unzip it (right-click the file → <b>Extract All</b>).</p>
+      <Button size="sm" asChild>
+        <a href="/api/extension/download" download><Download /> Download extension (.zip)</a>
+      </Button>
+    </div>,
+    <>In Chrome open <code className="font-mono text-xs">chrome://extensions</code>, turn on <b>Developer mode</b> (top right), click <b>Load unpacked</b> and choose the unzipped <code className="font-mono text-xs">codeinsight-extension</code> folder.</>,
+    <>Click the CodeInsight icon in Chrome’s toolbar, paste your sign-in token from below and click <b>Save &amp; Connect</b>. The server address is already filled in.</>,
     <>Open any LeetCode problem. A <b>“Which pattern?”</b> card appears — guess before you code, then submit as usual.</>,
   ];
   return (

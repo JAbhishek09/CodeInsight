@@ -15,6 +15,7 @@ import predictionRoutes from './routes/prediction.routes.js';
 import tutorRoutes from './routes/tutor.routes.js';
 import practiceRoutes from './routes/practice.routes.js';
 import importRoutes from './routes/import.routes.js';
+import extensionDownloadRoutes from './routes/extensionDownload.routes.js';
 import diagnoseRoutes from './routes/diagnose.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
 import rateLimit from 'express-rate-limit';
@@ -129,6 +130,7 @@ app.use('/api/predictions', predictionRoutes);
 app.use('/api/tutor',      tutorRoutes);
 app.use('/api/practice',   practiceRoutes);
 app.use('/api/import',     importRoutes);
+app.use('/api/extension',  extensionDownloadRoutes); // the extension as a zip
 if (!isProduction) app.use('/api/diagnose', diagnoseRoutes);   // dev-only diagnostics
 
 // ─── Web app (production, single origin) ─────────────────────────────────────

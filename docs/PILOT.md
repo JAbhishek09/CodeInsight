@@ -83,14 +83,18 @@ Environment variables (see `backend/.env.example`):
 What production mode changes: missing secrets stop the server at startup,
 `/api/diagnose` is not mounted, and localhost origins are not allowed.
 
-## 3. Package the extension
+## 3. The extension
+
+Nothing to package by hand. Students download it from the site: Profile →
+Connections → Browser extension → **Download extension (.zip)**
+(`GET /api/extension/download`). The server builds the zip already pointed at
+its own address (host permission, default server address, popup link).
+
+To test a build locally as an unpacked folder instead:
 
 ```bash
 node extension/scripts/package.mjs --api https://codeinsight.example.com
 ```
-
-This writes `extension-dist/` pointing at the production server (host
-permission, default server address, popup link). Zip the folder and share it.
 
 ## 4. Smoke test (15 minutes, on the deployed URL)
 
@@ -100,9 +104,9 @@ permission, default server address, popup link). Zip the folder and share it.
 - [ ] Profile → Connections: add a LeetCode username; Import: import history.
 - [ ] Home shows a focus pattern and today's plan.
 - [ ] Drill: finish a deck; Home shows **Recognition by week**.
-- [ ] Install the packaged extension in a clean Chrome profile, paste the
-      token and server address from Profile → Connections → Browser
-      extension. On a LeetCode problem the **Which pattern?** card appears;
+- [ ] In a clean Chrome profile, download the extension from Profile →
+      Connections → Browser extension, unzip, Load unpacked, and paste the
+      sign-in token. On a LeetCode problem the **Which pattern?** card appears;
       after submitting, the feedback card shows; Connections shows
       "Connected".
 - [ ] `node scripts/pilotReport.js --weeks 1` lists the test account. Delete
@@ -113,9 +117,9 @@ permission, default server address, popup link). Zip the folder and share it.
 Send each student:
 
 1. The link and the invite code.
-2. The zipped extension and the three steps from Profile → Connections →
-   Browser extension (Chrome → `chrome://extensions` → Developer mode →
-   Load unpacked).
+2. A pointer to Profile → Connections → Browser extension, where they
+   download the extension and follow the four steps (unzip →
+   `chrome://extensions` → Developer mode → Load unpacked → paste token).
 3. The ask: *"For two weeks, before you start any LeetCode problem, pick the
    pattern in the CodeInsight card first. Do a 2-minute drill on days you
    don't code. Home shows what to practise each day."*
