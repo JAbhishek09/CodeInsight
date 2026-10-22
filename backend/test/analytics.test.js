@@ -43,6 +43,9 @@ describe('GET /api/analytics/summary data', () => {
     assert.equal(s.solvedByMonth.at(-1).month, '2026-10');
     assert.equal(s.solvedByMonth.at(-1).total, 1);
     assert.equal(s.solvedByMonth.at(-1).byDifficulty.Easy, 1);
+    // Solve days carry their difficulty mix; empty days don't
+    assert.deepEqual(s.solvedByDay.find((d) => d.date === '2026-10-10').byDifficulty, { Easy: 1 });
+    assert.equal(s.solvedByDay.find((d) => d.date === '2026-10-11').byDifficulty, undefined);
     // ...but every submission still shows up in activity
     assert.equal(sumCounts(s.submissionsByDay), 4);
     assert.equal(s.totals.submissions, 4);

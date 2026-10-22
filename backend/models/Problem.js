@@ -80,6 +80,9 @@ const ProblemSchema = new mongoose.Schema(
       default: 'Medium',
     },
     tags: [{ type: String }],
+    // When LeetCode was last asked for this problem's difficulty and tags
+    // (see services/problemMetaService.js); null = not asked yet.
+    metaCheckedAt: { type: Date, default: null },
 
     // Legacy fields for manual problems
     status:         { type: String, enum: { values: ['Solved', 'Attempted', 'To Do'], message: 'Invalid status' }, default: 'Solved' },

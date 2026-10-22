@@ -273,7 +273,9 @@ async function fetchAllSolvedProblemsAuthenticated(sessionCookie) {
  * Difficulty + topic tags for specific problems, 50 per GraphQL request via
  * aliases. Needed because userProgressQuestionList stops at 600 problems
  * (observed live: 988 solved, 600 returned), leaving the rest without tags.
- * Returns Map<slug, { title, difficulty, tags }>.
+ * Public data: works without a session.
+ * Returns Map<slug, { title, difficulty, tags } | null> — null when LeetCode
+ * answered that there's no such problem; slugs in a failed request are left out.
  */
 export async function fetchQuestionMeta(slugs, sessionCookie = null) {
   const meta = new Map();
@@ -287,14 +289,14 @@ export async function fetchQuestionMeta(slugs, sessionCookie = null) {
     const variables = Object.fromEntries(chunk.map((slug, j) => [`s${j}`, slug]));
     try {
       const data = await lcGraphQL(`query questionMeta(${varDefs}) {\n${fields}\n}`, variables, sessionCookie);
-      for (const q of Object.values(data?.data ?? {})) {
-        if (!q?.titleSlug) continue;
-        meta.set(q.titleSlug, {
+      chunk.forEach((slug, j) => {
+        const q = data?.data?.[`q${j}`];
+        meta.set(slug, q ? {
           title: q.title,
           difficulty: normaliseDifficulty(q.difficulty),
           tags: (q.topicTags ?? []).map(t => t.name),
-        });
-      }
+        } : null);
+      });
     } catch (err) {
       console.warn(`[LC] questionMeta chunk ${i / CHUNK + 1} failed: ${err.message}`);
     }
@@ -320,7 +322,8 @@ async function fetchRecentAcSubmissions(handle) {
     .map(s => ({
       platformProblemId: s.titleSlug, title: s.title,
       link: `${LC_BASE}/problems/${s.titleSlug}/`,
-      difficulty: 'Medium', tags: [], verdict: 'Accepted',
+      // Not in this list: problemMetaService fills difficulty and tags afterwards
+      difficulty: null, tags: [], verdict: 'Accepted',
       submittedAt: new Date(parseInt(s.timestamp, 10) * 1000),
       submissionId: s.id, language: s.lang, code: '',
     }));

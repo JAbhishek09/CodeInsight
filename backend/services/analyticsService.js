@@ -199,7 +199,7 @@ function facets({ tz, today, fromDay, fromMonth }) {
     ],
     solvedByDay: [
       { $match: { solvedDay: { $gte: fromDay, $lte: today } } },
-      { $group: { _id: '$solvedDay', count: { $sum: 1 } } },
+      { $group: { _id: { day: '$solvedDay', difficulty: '$difficulty' }, count: { $sum: 1 } } },
     ],
     solvedByMonth: [
       { $match: { solvedDay: { $gte: `${fromMonth}-01`, $lte: today } } },
@@ -284,13 +284,21 @@ export async function buildAnalyticsSummary({
   const byPlatform = Object.fromEntries(['leetcode', 'codeforces', 'manual'].map((p) => [p, { total: 0, solved: 0 }]));
   for (const row of agg.byPlatform) byPlatform[row._id] = { total: row.total, solved: row.solved };
 
-  const solvedMap = new Map(agg.solvedByDay.map((r) => [r._id, r.count]));
+  // Per day: how many were solved, and by difficulty (so charts can stack by week or day too)
+  const solvedMap = new Map();
+  for (const r of agg.solvedByDay) {
+    const cur = solvedMap.get(r._id.day) ?? { count: 0, byDifficulty: {} };
+    cur.count += r.count;
+    cur.byDifficulty[r._id.difficulty] = (cur.byDifficulty[r._id.difficulty] ?? 0) + r.count;
+    solvedMap.set(r._id.day, cur);
+  }
   const subsMap = new Map(agg.submissionsByDay.map((r) => [r._id, r]));
   const solvedByDay = [];
   const submissionsByDay = [];
   for (let i = 0; i < DAYS; i += 1) {
     const date = addDays(fromDay, i);
-    solvedByDay.push({ date, count: solvedMap.get(date) || 0 });
+    const solved = solvedMap.get(date);
+    solvedByDay.push(solved ? { date, count: solved.count, byDifficulty: solved.byDifficulty } : { date, count: 0 });
     const s = subsMap.get(date);
     submissionsByDay.push({ date, count: s?.count || 0, accepted: s?.accepted || 0 });
   }
@@ -314,7 +322,7 @@ export async function buildAnalyticsSummary({
     else verdicts.other = (verdicts.other || 0) + r.count;
   }
 
-  const solvedToday = solvedMap.get(today) || 0;
+  const solvedToday = solvedMap.get(today)?.count ?? 0;
 
   return {
     platform,

@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { __setGeneratorForTests } from '../services/aiService.js';
+import { __setMetaFetcherForTests } from '../services/problemMetaService.js';
 
 process.env.JWT_SECRET ||= 'test-secret';
 
@@ -15,6 +16,8 @@ const OFFLINE_AI_REPLY = JSON.stringify({
 
 export async function startDb() {
   __setGeneratorForTests(async () => OFFLINE_AI_REPLY);
+  // Nor LeetCode: background tag lookups find nothing unless a test sets its own.
+  __setMetaFetcherForTests(async () => new Map());
   // First start on Windows can be slow (binary scan), so allow more than the 10s default
   mongod = await MongoMemoryServer.create({ instance: { launchTimeout: 60000 } });
   await mongoose.connect(mongod.getUri());
