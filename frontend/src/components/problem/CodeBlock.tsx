@@ -45,7 +45,8 @@ export default function CodeBlock({ code, language, label, meta, className, maxH
           </button>
         </div>
       </div>
-      <pre className={cn('overflow-auto p-4 font-mono text-[12.5px] leading-relaxed text-foreground', maxHeight)}>
+      {/* No ligatures: != and >= must read as typed, not as ≠ and ≥ */}
+      <pre className={cn('overflow-auto p-4 font-mono text-[12.5px] leading-relaxed text-foreground [font-variant-ligatures:none]', maxHeight)}>
         <code>{code}</code>
       </pre>
     </div>
