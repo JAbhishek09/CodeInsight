@@ -66,6 +66,10 @@ export interface ProblemListItem {
   latestLanguage: string | null;
   lastSubmittedAt: string | null;
   firstSolvedAt: string | null;
+  /** Pattern from the knowledge base (mapped LeetCode problems only). */
+  pattern: { key: string; name: string } | null;
+  /** Latest guess made while solving (extension or problem page). */
+  guess: { predicted: string; predictedName: string; result: 'spotted' | 'missed' | 'unsure' } | null;
 }
 
 export interface ProblemListPage {

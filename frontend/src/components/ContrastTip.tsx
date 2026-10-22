@@ -26,9 +26,9 @@ export default function ContrastTip({
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs font-medium text-muted-foreground">
         <Scale className="size-3.5" aria-hidden />
         How to tell
-        <span style={patternStyle(actual.key)} className="inline-flex items-center gap-1 pat-text"><Dot k={actual.key} />{actual.name}</span>
+        <span className="inline-flex items-center gap-1 text-foreground"><Dot k={actual.key} />{actual.name}</span>
         from
-        <span style={patternStyle(other.key)} className="inline-flex items-center gap-1 pat-text"><Dot k={other.key} />{other.name}</span>
+        <span className="inline-flex items-center gap-1 text-foreground"><Dot k={other.key} />{other.name}</span>
       </p>
       <p className={cn('mt-1 leading-relaxed text-foreground/90', compact ? 'text-xs' : 'text-sm')}>{tip}</p>
     </div>

@@ -27,3 +27,16 @@ export const PATTERN_OPTIONS: { key: PatternKey; name: string }[] = [
   { key: 'heap-top-k', name: 'Heap & top-K' },
   { key: 'dp-1d', name: '1-D dynamic programming' },
 ];
+
+/** Short labels for tight spots (grid headers, phone tables). */
+export const PATTERN_ABBR: Record<string, string> = {
+  'two-pointers': '2 ptrs',
+  'prefix-hashing': 'Hash',
+  'sliding-window': 'Window',
+  'binary-search': 'Bin. search',
+  stack: 'Stack',
+  'bfs-dfs': 'Graph',
+  'heap-top-k': 'Heap',
+  'dp-1d': 'DP',
+  unsure: 'Not sure',
+};

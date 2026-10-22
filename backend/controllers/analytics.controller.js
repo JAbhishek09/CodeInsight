@@ -7,6 +7,7 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import { buildAnalyticsSummary, isValidTimeZone, PLATFORMS } from '../services/analyticsService.js';
 import { buildAiInsights } from '../services/aiInsightsService.js';
+import { buildPatternReport } from '../services/patternReportService.js';
 
 /**
  * @desc    Get analytics summary for the logged-in user
@@ -50,4 +51,14 @@ export const getAiInsights = asyncHandler(async (req, res) => {
   }
   const data = await buildAiInsights({ userId: req.user._id, platform });
   res.status(200).json({ success: true, data });
+});
+
+/**
+ * @desc    Per-pattern report: solved, spotted, how solutions fail, biggest
+ *          gap; plus the mix-up grid (actual pattern × guess) with tips
+ * @route   GET /api/analytics/patterns
+ * @access  Private
+ */
+export const getPatternReport = asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, data: await buildPatternReport(req.user._id) });
 });

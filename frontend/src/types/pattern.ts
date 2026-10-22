@@ -184,3 +184,36 @@ export interface DrillDeck {
   cards: DrillCard[];
   options: { key: string; name: string }[];
 }
+
+/** See backend/services/patternReportService.js. */
+export type PatternGap = 'not-started' | 'recognition' | 'speed' | 'edge-cases' | 'unfinished' | 'on-track';
+
+export interface PatternReportRow {
+  key: string;
+  name: string;
+  level: number;
+  total: number;
+  solved: number;
+  attempted: number;
+  recognition: { attempts: number; correct: number; accuracy: number | null };
+  submissions: number;
+  failures: { wrongAnswer: number; slow: number; crash: number };
+  firstSubmit: { solved: number; accepted: number; rate: number | null };
+  attemptsToAccept: number | null;
+  gap: PatternGap;
+}
+
+export interface PatternReport {
+  totals: {
+    keyProblems: number;
+    solved: number;
+    attempted: number;
+    recognition: { attempts: number; correct: number; accuracy: number | null };
+    firstSubmit: { solved: number; accepted: number; rate: number | null };
+    failures: { wrongAnswer: number; slow: number; crash: number };
+  };
+  patterns: PatternReportRow[];
+  /** rows: actual pattern; columns: the guess (8 patterns + 'unsure'); right guesses sit on the diagonal. */
+  matrix: { rows: string[]; columns: string[]; counts: number[][] };
+  mixups: { actual: string; predicted: string; count: number; tip: string | null }[];
+}

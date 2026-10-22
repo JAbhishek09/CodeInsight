@@ -38,6 +38,7 @@ export function useDrillAnswer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['predictions'] });
       qc.invalidateQueries({ queryKey: ['practice'] });
+      qc.invalidateQueries({ queryKey: ['analytics', 'patterns'] });
     },
   });
 }
