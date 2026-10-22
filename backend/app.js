@@ -30,7 +30,7 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 
 // CLIENT_URL may list several origins, comma-separated.
 export const allowedOrigins = [
-  ...(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
+  ...(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
   ...(isProduction ? [] : ['http://localhost:5000', 'http://localhost:5174']),
 ];
 
@@ -54,35 +54,43 @@ export const allowedOrigins = [
  */
 export const ALLOWED_EXTENSION_ID = process.env.EXTENSION_ID || null;
 
+/** The page making the request is served by this same server (SERVE_CLIENT). */
+const isSameHost = (req, origin) => {
+  try { return new URL(origin).host === req.get('host'); } catch { return false; }
+};
+
 app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Same-origin or server-to-server requests (no Origin header)
-      if (!origin) return callback(null, true);
-
-      // Web frontend (React dev server, production domain)
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-
-      // Chrome Extension
-      if (origin.startsWith('chrome-extension://')) {
-        if (!ALLOWED_EXTENSION_ID) {
-          // Development mode — no ID configured, allow all extension origins
-          return callback(null, true);
-        }
-        // Production mode — only allow the registered extension
-        if (origin === `chrome-extension://${ALLOWED_EXTENSION_ID}`) {
-          return callback(null, true);
-        }
-        console.warn(`[CORS] Rejected unregistered extension origin: ${origin}`);
-        return callback(new Error('Extension origin not allowed. EXTENSION_ID mismatch.'));
-      }
-
-      console.warn(`[CORS] Rejected unknown origin: ${origin}`);
-      return callback(new Error('Not allowed by CORS'));
-    },
+  cors((req, done) => done(null, {
     credentials: true,
-  })
+    // The app's own pages always pass, whatever CLIENT_URL says.
+    origin: isSameHost(req, req.header('Origin')) ? true : checkOrigin,
+  }))
 );
+
+function checkOrigin(origin, callback) {
+  // Same-origin or server-to-server requests (no Origin header)
+  if (!origin) return callback(null, true);
+
+  // Web frontend (React dev server, production domain)
+  if (allowedOrigins.includes(origin)) return callback(null, true);
+
+  // Chrome Extension
+  if (origin.startsWith('chrome-extension://')) {
+    if (!ALLOWED_EXTENSION_ID) {
+      // Development mode — no ID configured, allow all extension origins
+      return callback(null, true);
+    }
+    // Production mode — only allow the registered extension
+    if (origin === `chrome-extension://${ALLOWED_EXTENSION_ID}`) {
+      return callback(null, true);
+    }
+    console.warn(`[CORS] Rejected unregistered extension origin: ${origin}`);
+    return callback(new Error('Extension origin not allowed. EXTENSION_ID mismatch.'));
+  }
+
+  console.warn(`[CORS] Rejected unknown origin: ${origin}`);
+  return callback(new Error('Not allowed by CORS'));
+}
 
 app.use(express.json({ limit: '1mb' }));
 
