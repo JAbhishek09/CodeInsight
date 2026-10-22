@@ -41,7 +41,9 @@ function Pointers({ list }: { list: Pointer[] }) {
         <div key={p.label} className="absolute left-0 flex justify-center transition-transform duration-300 ease-out"
           style={{ width: 'var(--cell)', transform: `translate(${at(p.at)}, ${lanes[i] * -18}px)`, bottom: 0 }}>
           <span className={cn('whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold leading-none',
-            p.muted ? 'bg-surface-3 text-muted-foreground' : 'bg-[var(--pc)] text-background')}>
+            p.muted ? 'bg-surface-3 text-muted-foreground'
+              // Tint + ring, label in the readable pattern ink (a solid fill can't suit every colour)
+              : 'bg-[color-mix(in_oklab,var(--pc)_16%,transparent)] ring-1 ring-inset ring-[color-mix(in_oklab,var(--pc)_70%,transparent)] pat-text')}>
             {p.hint === '←' && '← '}{p.label}{p.hint === '→' && ' →'}
           </span>
         </div>

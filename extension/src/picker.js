@@ -8,20 +8,21 @@
  *   3. They submit → bridge.js uploads → backend returns feedback → card.
  * The answer is never shown before they submit.
  *
- * Keep PATTERNS in sync with backend/data/patterns.js.
+ * Keep PATTERNS in sync with backend/data/patterns.js, and the colours with
+ * the dark theme's --pat-* in frontend/src/index.css (colour-blind checked).
  */
 (function () {
   'use strict';
 
   var PATTERNS = [
-    { key: 'two-pointers', name: 'Two pointers', color: '#22d3ee' },
-    { key: 'prefix-hashing', name: 'Prefix sums & hashing', color: '#a3e635' },
-    { key: 'sliding-window', name: 'Sliding window', color: '#a78bfa' },
-    { key: 'binary-search', name: 'Binary search', color: '#fbbf24' },
-    { key: 'stack', name: 'Stack & monotonic stack', color: '#fb7185' },
-    { key: 'bfs-dfs', name: 'Graph & grid BFS/DFS', color: '#34d399' },
-    { key: 'heap-top-k', name: 'Heap & top-K', color: '#fb923c' },
-    { key: 'dp-1d', name: '1-D dynamic programming', color: '#e879f9' },
+    { key: 'two-pointers', name: 'Two pointers', color: '#1969e3' },
+    { key: 'prefix-hashing', name: 'Prefix sums & hashing', color: '#81a10d' },
+    { key: 'sliding-window', name: 'Sliding window', color: '#cb234b' },
+    { key: 'binary-search', name: 'Binary search', color: '#de55b7' },
+    { key: 'stack', name: 'Stack & monotonic stack', color: '#9145ca' },
+    { key: 'bfs-dfs', name: 'Graph & grid BFS/DFS', color: '#c06e0b' },
+    { key: 'heap-top-k', name: 'Heap & top-K', color: '#0a8566' },
+    { key: 'dp-1d', name: '1-D dynamic programming', color: '#10a0ce' },
   ];
   var byKey = {};
   PATTERNS.forEach(function (p) { byKey[p.key] = p; });
