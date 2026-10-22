@@ -7,6 +7,7 @@ import Prediction from '../models/Prediction.js';
 import { PATTERNS, PATTERN_KEYS, patternByKey } from '../data/patterns.js';
 import { problemPatternBySlug } from '../data/problemPatterns.js';
 import { scheduleReview } from './reviewService.js';
+import { contrastTip } from '../data/patternContrasts.js';
 
 const RECOGNITION_REVIEW_DAYS = 2;
 /** A missed or unsure guess means the pattern isn't recognised yet — re-solve soon. */
@@ -52,7 +53,7 @@ export function buildFeedback(pred) {
   const secondary = map.secondary ? { key: map.secondary, name: nameOf(map.secondary) } : null;
   const accepted = pred.verdict === 'Accepted';
   const failed = pred.verdict && !accepted;
-  let outcome, title, message;
+  let outcome, title, message, contrast = null;
 
   if (pred.predicted === UNSURE) {
     outcome = 'unsure';
@@ -74,10 +75,12 @@ export function buildFeedback(pred) {
     outcome = SLOW_VERDICTS.has(pred.verdict) ? 'wrong-approach' : 'missed';
     title = `This is ${pattern.name}, not ${base.predictedName}`;
     message = `The clue: ${pattern.cue}.` + (outcome === 'wrong-approach' ? ' That’s likely why it timed out.' : '');
+    const tip = contrastTip(map.pattern, pred.predicted);
+    if (tip) contrast = { key: pred.predicted, name: base.predictedName, tip };
   }
 
   return {
-    ...base, mapped: true, pattern, secondary, isCorrect: pred.isCorrect, outcome, title, message,
+    ...base, mapped: true, pattern, secondary, isCorrect: pred.isCorrect, outcome, title, message, contrast,
     problem: { title: map.title, difficulty: map.difficulty, url: `https://leetcode.com/problems/${pred.slug}/` },
   };
 }
@@ -175,6 +178,7 @@ export async function predictionStats(userId) {
       actual: c._id.actual, actualName: nameOf(c._id.actual),
       predicted: c._id.predicted, predictedName: nameOf(c._id.predicted),
       count: c.count,
+      tip: contrastTip(c._id.actual, c._id.predicted),
     })),
   };
 }

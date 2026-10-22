@@ -6,6 +6,7 @@ import { useWeeklyRecognition } from '../hooks/usePredictions';
 import QueryError from '../components/QueryError';
 import GetStarted from '../components/home/GetStarted';
 import RecognitionTrend from '../components/home/RecognitionTrend';
+import { MIN_POOLED, recognitionChange } from '@/lib/recognition';
 import PlanList, { MINUTES } from '../components/home/PlanList';
 import ScoreRing from '../components/home/ScoreRing';
 import { Button } from '@/components/ui/button';
@@ -25,10 +26,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 function Hero({ d, name }: { d: TodayPlan; name: string }) {
   const weekly = useWeeklyRecognition(8);
-  const weeks = (weekly.data ?? []).filter((w) => w.firstTry.attempts >= 3);
-  const delta = weeks.length >= 2
-    ? Math.round(((weeks[weeks.length - 1].firstTry.accuracy ?? 0) - (weeks[0].firstTry.accuracy ?? 0)) * 100)
-    : null;
+  const change = recognitionChange(weekly.data);
+  const delta = change?.delta ?? null;
   const next = d.plan[0];
   const minutes = d.plan.reduce((n, it) => n + MINUTES[it.difficulty], 0);
   const reviews = d.plan.filter((p) => p.kind === 'review').length;
@@ -86,8 +85,12 @@ function Hero({ d, name }: { d: TodayPlan; name: string }) {
           <dl className="space-y-3 text-sm">
             <div>
               <dt className="text-xs text-muted-foreground">Trend</dt>
-              <dd className={cn('font-semibold tabular-nums', delta == null ? 'text-subtle' : delta >= 0 ? 'text-success' : 'text-danger')}>
+              <dd
+                className={cn('font-semibold tabular-nums', delta == null ? 'text-subtle' : delta >= 0 ? 'text-success' : 'text-danger')}
+                title={change ? `First guesses: ${pct(change.from)} when you started, ${pct(change.to)} lately` : `Shows once you have ${MIN_POOLED} early and ${MIN_POOLED} recent first guesses`}
+              >
                 {delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta} pts`}
+                {change && <span className="block text-[11px] font-normal text-muted-foreground">{pct(change.from)} → {pct(change.to)}</span>}
               </dd>
             </div>
             <div>
@@ -222,7 +225,7 @@ function SkillMap({ d }: { d: TodayPlan }) {
                   <span className="text-[11px] font-semibold tabular-nums text-foreground">{Math.round(r * 100)}</span>
                 </ScoreRing>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                  <span className="block text-sm font-medium leading-snug text-foreground">{p.name}</span>
                   <span className="block text-xs tabular-nums text-muted-foreground">
                     {p.solved}/{p.total}{p.accuracy != null && <> · {pct(p.accuracy)} spotted</>}
                   </span>

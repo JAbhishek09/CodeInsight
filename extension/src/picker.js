@@ -52,6 +52,7 @@
     '.link{background:none;border:0;color:#a5a7f8;cursor:pointer;font:inherit;font-size:12px;padding:0;margin-top:8px}',
     '.fb{border-left:3px solid var(--c);padding-left:10px;margin-top:4px}',
     '.fb .title{color:var(--c)}',
+    '.tip{margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid #27272a;background:#0f0f12;font-size:12.5px;line-height:1.45}',
     '.err{color:#f87171;font-size:12px;margin-top:8px}',
   ].join('');
 
@@ -158,6 +159,12 @@
         el('div', { class: 'title' }, [fb.title]),
         el('div', { style: 'margin-top:4px' }, [fb.message]),
       ]));
+      if (fb.contrast && fb.contrast.tip) {
+        body.push(el('div', { class: 'tip' }, [
+          el('div', { class: 'muted' }, ['How to tell ' + fb.pattern.name + ' from ' + fb.contrast.name]),
+          el('div', { style: 'margin-top:3px' }, [fb.contrast.tip]),
+        ]));
+      }
       if (fb.pattern) body.push(el('div', { class: 'muted', style: 'margin-top:8px' }, ['Optimal: ' + fb.pattern.complexity]));
       wrap.append(el('div', { class: 'card' }, body));
     }

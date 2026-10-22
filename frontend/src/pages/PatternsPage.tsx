@@ -4,6 +4,7 @@ import { ArrowRight, Check, Sparkles } from 'lucide-react';
 import { usePatterns } from '../hooks/usePatterns';
 import { usePredictionStats } from '../hooks/usePredictions';
 import QueryError from '../components/QueryError';
+import ContrastTip from '../components/ContrastTip';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -11,18 +12,6 @@ import { masteryOf, patternStyle } from '@/lib/patterns';
 import type { PatternSummary } from '@/types/pattern';
 
 const LEVEL_LABEL: Record<number, string> = { 1: 'Foundations', 2: 'Core', 3: 'Advanced' };
-
-/** The pattern to work on next: an unfinished one whose prerequisites are started. */
-function pickFocus(patterns: PatternSummary[]): PatternSummary | null {
-  const byKey = new Map(patterns.map((p) => [p.key, p]));
-  const ready = (p: PatternSummary) => p.requires.every((r) => {
-    const q = byKey.get(r);
-    return q && masteryOf(q.solved, q.attempted, q.total) !== 'new';
-  });
-  const open = patterns.filter((p) => masteryOf(p.solved, p.attempted, p.total) !== 'mastered' && ready(p));
-  if (open.length === 0) return null;
-  return [...open].sort((a, b) => a.level - b.level || a.solved / a.total - b.solved / b.total)[0];
-}
 
 /** Circular progress node for one pattern. */
 function PatternNode({ p, focus, recognition }: { p: PatternSummary; focus: boolean; recognition?: { attempts: number; accuracy: number | null } }) {
@@ -83,7 +72,8 @@ export default function PatternsPage() {
   const stats = usePredictionStats().data;
   const data = q.data;
   const accuracyOf = (key: string) => stats?.perPattern.find((p) => p.key === key);
-  const focus = data ? pickFocus(data.patterns) : null;
+  // The server picks the focus (same rule as Home), so the two always agree
+  const focus = data?.patterns.find((p) => p.key === data.focusKey) ?? null;
   const mastered = data?.patterns.filter((p) => masteryOf(p.solved, p.attempted, p.total) === 'mastered').length ?? 0;
   const levels = data ? [...new Set(data.patterns.map((p) => p.level))].sort() : [];
 
@@ -172,15 +162,20 @@ export default function PatternsPage() {
                 {stats.attempts === 0 ? 'Guess the pattern on a few problems to see this.' : 'No mix-ups yet — nice.'}
               </p>
             ) : (
-              <ul className="mt-3 space-y-2">
+              <ul className="mt-3 space-y-3">
                 {stats.confusions.map((c) => (
-                  <li key={c.actual + c.predicted} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate">
-                      <Link to={`/patterns/${c.actual}`} style={patternStyle(c.actual)} className="font-medium pat-text hover:underline">{c.actualName}</Link>
-                      <span className="text-muted-foreground"> guessed as </span>
-                      <span className="text-foreground">{c.predictedName}</span>
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{c.count}×</span>
+                  <li key={c.actual + c.predicted} className="space-y-1.5 text-sm">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0">
+                        <Link to={`/patterns/${c.actual}`} style={patternStyle(c.actual)} className="font-medium pat-text hover:underline">{c.actualName}</Link>
+                        <span className="text-muted-foreground"> guessed as </span>
+                        <span className="text-foreground">{c.predictedName}</span>
+                      </span>
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{c.count}×</span>
+                    </div>
+                    {c.tip && (
+                      <ContrastTip compact actual={{ key: c.actual, name: c.actualName }} other={{ key: c.predicted, name: c.predictedName }} tip={c.tip} />
+                    )}
                   </li>
                 ))}
               </ul>

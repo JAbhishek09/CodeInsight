@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useDrill, useDrillAnswer } from '../hooks/usePractice';
 import QueryError from '../components/QueryError';
+import ContrastTip from '../components/ContrastTip';
 import DifficultyBadge from '../components/DifficultyBadge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -61,6 +62,9 @@ function Reveal({ f, onNext, last }: { f: PatternFeedback; onNext: () => void; l
           <p className="font-semibold text-foreground">{right ? `Yes — ${p.name}` : f.title}</p>
           <p className="text-sm text-foreground/85"><span className="font-medium pat-text">The clue:</span> {p.cue}.</p>
           {p.short && <p className="text-sm text-foreground/70">{p.short}</p>}
+          {f.contrast && (
+            <ContrastTip className="mt-2" actual={{ key: p.key, name: p.name }} other={f.contrast} tip={f.contrast.tip} />
+          )}
           {f.problem && (
             <p className="pt-1 text-xs text-muted-foreground">
               This was <a href={f.problem.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground hover:underline">
@@ -183,6 +187,9 @@ function Results({ answers, onAgain, scoped }: { answers: Answer[]; onAgain: () 
                     {a.predicted !== 'unsure' && <span className="text-xs text-muted-foreground">(you said {a.feedback.predictedName})</span>}
                   </div>
                   <p className="mt-1 text-muted-foreground">{p.cue}</p>
+                  {a.feedback.contrast && (
+                    <ContrastTip compact className="mt-2" actual={{ key: p.key, name: p.name }} other={a.feedback.contrast} tip={a.feedback.contrast.tip} />
+                  )}
                 </li>
               );
             })}
@@ -286,8 +293,9 @@ export default function DrillPage() {
         </p>
       </div>
 
-      <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="group" aria-label="Deck">
-        <div className="flex w-max gap-1.5">
+      {/* Phones: one swipeable row (no visible scrollbar). Wider screens: wrap. */}
+      <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden" role="group" aria-label="Deck">
+        <div className="flex w-max gap-1.5 sm:w-auto sm:flex-wrap">
           <button type="button" onClick={() => choose(null)} aria-pressed={!pattern}
             className={cn('rounded-full border px-3 py-1 text-xs transition-colors', !pattern ? 'border-primary/60 bg-primary/15 text-foreground' : 'border-border text-muted-foreground hover:text-foreground')}>
             Mixed

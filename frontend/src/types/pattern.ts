@@ -13,6 +13,8 @@ export interface PatternSummary {
 export interface PatternsOverview {
   patterns: PatternSummary[];
   totals: { problems: number; solved: number; attempted: number };
+  /** Same focus as Home's plan (server decides). */
+  focusKey: string | null;
 }
 
 export interface PatternProblem {
@@ -67,6 +69,8 @@ export interface PatternFeedback {
   pattern?: { key: string; name: string; short?: string; cue: string; complexity: string };
   secondary?: { key: string; name: string } | null;
   problem?: { title: string; difficulty: 'Easy' | 'Medium' | 'Hard'; url: string };
+  /** After a wrong guess: how to tell the real pattern from the one picked. */
+  contrast?: { key: string; name: string; tip: string } | null;
 }
 
 export interface PredictionStats {
@@ -74,7 +78,7 @@ export interface PredictionStats {
   correct: number;
   accuracy: number | null;
   perPattern: { key: string; attempts: number; correct: number; unsure: number; accuracy: number | null }[];
-  confusions: { actual: string; actualName: string; predicted: string; predictedName: string; count: number }[];
+  confusions: { actual: string; actualName: string; predicted: string; predictedName: string; count: number; tip: string | null }[];
 }
 
 /** See backend/services/diagnosisService.js. */

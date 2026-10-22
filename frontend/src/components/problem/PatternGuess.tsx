@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle2, CircleHelp, Loader2, Network, XCircle } from 'lucide-react';
 import { useGuessPattern, useLatestFeedback } from '@/hooks/usePredictions';
 import { cn } from '@/lib/utils';
+import ContrastTip from '@/components/ContrastTip';
 import { patternStyle, PATTERN_OPTIONS } from '@/lib/patterns';
 import type { PatternFeedback, ProblemPattern } from '@/types/pattern';
 
@@ -32,6 +33,9 @@ export function FeedbackCard({ feedback }: { feedback: PatternFeedback }) {
               {feedback.verdict && <> · your submission: {feedback.verdict}</>}
               {feedback.source === 'extension' && <> · guessed in LeetCode</>}
             </p>
+          )}
+          {p && feedback.contrast && (
+            <ContrastTip compact className="mt-2" actual={{ key: p.key, name: p.name }} other={feedback.contrast} tip={feedback.contrast.tip} />
           )}
         </div>
       </div>
