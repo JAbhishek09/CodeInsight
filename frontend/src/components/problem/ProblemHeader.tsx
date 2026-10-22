@@ -1,10 +1,8 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ExternalLink } from 'lucide-react';
-import PatternGuess from './PatternGuess';
 import DifficultyBadge from '@/components/DifficultyBadge';
 import { Button } from '@/components/ui/button';
-import { relativeTime, shortDate } from '@/lib/format';
-import type { Problem, Submission } from '@/types/problem';
+import type { Problem } from '@/types/problem';
 
 const PLATFORM_LABEL: Record<string, string> = {
   leetcode: 'LeetCode',
@@ -14,20 +12,8 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 const MAX_TAGS = 6;
 
-function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <div className="min-w-0" title={hint}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 truncate text-sm font-semibold tabular-nums text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-export default function ProblemHeader({ problem, submissions }: { problem: Problem; submissions: Submission[] }) {
-  const accepted = submissions.filter((s) => s.verdict === 'Accepted');
-  const firstSolved = accepted.length ? accepted[accepted.length - 1].submittedAt : null;
-  const lastSubmitted = submissions[0]?.submittedAt ?? null;
-  const acceptance = submissions.length ? Math.round((accepted.length / submissions.length) * 100) : null;
+/** Back link, badges, title, topics and the link to the problem's site. */
+export default function ProblemHeader({ problem }: { problem: Problem }) {
   const tags = problem.tags ?? [];
   const platform = problem.platform ?? 'manual';
 
@@ -74,26 +60,6 @@ export default function ProblemHeader({ problem, submissions }: { problem: Probl
           </Button>
         )}
       </div>
-
-      {problem.pattern && problem.platformProblemId && (
-        <PatternGuess
-          key={problem._id}
-          pattern={problem.pattern}
-          slug={problem.platformProblemId ?? ''}
-          solved={problem.status === 'Solved' || accepted.length > 0}
-        />
-      )}
-
-      <dl className="grid grid-cols-2 gap-4 rounded-lg border border-border bg-surface-1 px-4 py-3 sm:grid-cols-4">
-        <Stat label="Submissions" value={submissions.length} />
-        <Stat
-          label="Acceptance"
-          value={acceptance === null ? '—' : `${acceptance}%`}
-          hint={`${accepted.length} accepted of ${submissions.length}`}
-        />
-        <Stat label="First solved" value={shortDate(firstSolved)} />
-        <Stat label="Last submission" value={relativeTime(lastSubmitted)} hint={lastSubmitted ?? undefined} />
-      </dl>
     </header>
   );
 }
