@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
@@ -8,6 +8,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import AppShell from './components/layout/AppShell';
+import PageErrorBoundary from './components/layout/PageErrorBoundary';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './lib/queryClient';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -30,13 +31,18 @@ function AnalysisRedirect() {
   return <Navigate to={`/problems/${problemId}?tab=analysis`} replace />;
 }
 
-// Signed-in pages share the app shell (sidebar / mobile tabs).
+// Signed-in pages share the app shell (sidebar / mobile tabs). A page that
+// fails to load shows an error screen inside the shell; the boundary resets
+// when the path changes.
 function AuthLayout({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation();
   return (
     <AppShell>
-      <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-surface-1" aria-busy="true" aria-label="Loading page" />}>
-        {children}
-      </Suspense>
+      <PageErrorBoundary key={pathname}>
+        <Suspense fallback={<div className="h-64 animate-pulse rounded-lg bg-surface-1" aria-busy="true" aria-label="Loading page" />}>
+          {children}
+        </Suspense>
+      </PageErrorBoundary>
     </AppShell>
   );
 }
