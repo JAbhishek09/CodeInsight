@@ -7,7 +7,7 @@ answers: **does recognising the pattern get better week over week?**
 
 | Measure | Where | Why |
 |---|---|---|
-| **First-try recognition accuracy per week** (headline) | `scripts/pilotReport.js`, student's Home | First guess a student ever makes on a problem. Repeat drills of a seen problem are excluded, so the number can't climb by memorising cards. "Not sure" counts as wrong. |
+| **First-try recognition accuracy per week** (headline) | `scripts/pilotReport.js`, student's Home | First guess a student ever makes on a problem. Repeat drills of a seen problem are excluded, so the number can't climb by memorising cards. "Not sure" counts as wrong; a right answer after the drill's hint counts as half. |
 | All-guess accuracy per week | report CSV | Includes repeats; shows practice volume. |
 | Guesses by source (drill / extension / app) | report CSV | Are they using it on LeetCode, or only drilling? |
 | Active days per week | report CSV | Engagement. |
@@ -103,7 +103,9 @@ node extension/scripts/package.mjs --api https://codeinsight.example.com
       the **Get started** checklist.
 - [ ] Profile → Connections: add a LeetCode username; Import: import history.
 - [ ] Home shows a focus pattern and today's plan.
-- [ ] Drill: finish a deck; Home shows **Recognition by week**.
+- [ ] Drill: finish a deck, using the hint on one card (it scores half a
+      point); the drill page shows today's 10 cards done; Home shows
+      **Recognition by week**.
 - [ ] In a clean Chrome profile, download the extension from Profile →
       Connections → Browser extension, unzip, Load unpacked, and paste the
       sign-in token. On a LeetCode problem the **Which pattern?** card appears;

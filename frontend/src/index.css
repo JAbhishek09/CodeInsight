@@ -232,6 +232,19 @@
   /* Guess-the-pattern drill */
   .drill-card   { animation: drillIn 0.28s cubic-bezier(.2,.8,.2,1) both; }
   .drill-reveal { animation: fadeSlideIn 0.22s ease both; }
+  /* The hint: a highlighter sweeps over the clue words (tint + underline, not colour alone) */
+  .drill-clue {
+    color: inherit;
+    border-radius: 0.2em;
+    background: linear-gradient(color-mix(in oklab, var(--primary) 26%, transparent), color-mix(in oklab, var(--primary) 26%, transparent)) no-repeat left / 0% 100%;
+    text-decoration: underline 2px color-mix(in oklab, var(--primary) 75%, transparent);
+    text-underline-offset: 0.28em;
+    animation: clueSweep 0.55s cubic-bezier(.2,.8,.2,1) 0.05s forwards;
+  }
+}
+
+@keyframes clueSweep {
+  to { background-size: 100% 100%; }
 }
 
 @keyframes drillIn {

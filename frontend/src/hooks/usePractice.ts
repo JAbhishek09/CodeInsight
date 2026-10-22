@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axiosInstance';
-import type { DrillDeck, PatternFeedback, TodayPlan } from '../types/pattern';
+import type { DrillDeck, DrillStreak, PatternFeedback, TodayPlan } from '../types/pattern';
+
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 export function useToday() {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const tz = timeZone();
   return useQuery({
     queryKey: ['practice', 'today', tz],
     queryFn: async () => (await api.get('/practice/today', { params: { tz } })).data?.data as TodayPlan,
@@ -30,11 +32,20 @@ export function useDrill(pattern: string | null) {
   });
 }
 
+/** Today's drill cards against the daily target, and the drill streak. Refreshed after every answer. */
+export function useDrillStreak() {
+  const tz = timeZone();
+  return useQuery({
+    queryKey: ['practice', 'drill-streak', tz],
+    queryFn: async () => (await api.get('/practice/drill/streak', { params: { tz } })).data?.data as DrillStreak,
+  });
+}
+
 export function useDrillAnswer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ slug, predicted }: { slug: string; predicted: string }) =>
-      (await api.post('/predictions', { slug, predicted, source: 'drill' })).data?.data?.feedback as PatternFeedback,
+    mutationFn: async ({ slug, predicted, hinted }: { slug: string; predicted: string; hinted: boolean }) =>
+      (await api.post('/predictions', { slug, predicted, source: 'drill', hinted })).data?.data?.feedback as PatternFeedback,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['predictions'] });
       qc.invalidateQueries({ queryKey: ['practice'] });

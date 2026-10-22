@@ -11,6 +11,7 @@ import { PATTERNS, PATTERN_KEYS } from '../data/patterns.js';
 import { PROBLEM_PATTERNS, problemPatternBySlug } from '../data/problemPatterns.js';
 import { contrastTip } from '../data/patternContrasts.js';
 import { statusOf } from './patternService.js';
+import { creditOf } from './predictionService.js';
 
 const UNSURE = 'unsure';
 const SLOW = new Set(['TLE', 'MLE']);
@@ -41,7 +42,7 @@ export async function buildPatternReport(userId) {
     ).lean(),
     Prediction.find(
       { user: userId, resolvedAt: { $ne: null }, actual: { $ne: null } },
-      { actual: 1, predicted: 1, isCorrect: 1 }
+      { actual: 1, predicted: 1, isCorrect: 1, hinted: 1 }
     ).lean(),
   ]);
 
@@ -91,7 +92,7 @@ export async function buildPatternReport(userId) {
     const r = rows.get(p.actual);
     if (!r) continue;
     r.recognition.attempts += 1;
-    if (p.isCorrect) r.recognition.correct += 1;
+    r.recognition.correct += creditOf(p); // a right guess after the drill's hint is half
     // A guess of the secondary pattern counts as right, so it sits on the diagonal
     const col = p.isCorrect ? p.actual : (columns.includes(p.predicted) ? p.predicted : null);
     if (col) counts[PATTERN_KEYS.indexOf(p.actual)][columns.indexOf(col)] += 1;

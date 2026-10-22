@@ -60,6 +60,8 @@ export interface PatternFeedback {
   predictedName: string;
   verdict: string | null;
   source: 'extension' | 'app' | 'drill';
+  /** Drill answer given after the hint (a right one is worth half). */
+  hinted?: boolean;
   createdAt: string;
   mapped: boolean;
   outcome: 'recognised' | 'right-pattern-bug' | 'missed' | 'wrong-approach' | 'unsure' | 'unmapped';
@@ -180,7 +182,18 @@ export interface DrillCard {
   slug: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   prompt: string;
+  /** The hint: words in the prompt that carry the clue. */
+  clues: string[];
   missedBefore: boolean;
+  hintedBefore: boolean;
+}
+
+/** See backend/services/drillService.js drillStreak(). */
+export interface DrillStreak {
+  /** Cards to answer in a day for it to count. */
+  target: number;
+  today: { date: string; cards: number; done: boolean };
+  streak: { current: number; longest: number; activeToday: boolean; lastActiveDay: string | null };
 }
 
 export interface DrillDeck {

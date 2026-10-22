@@ -23,6 +23,14 @@ export const UNSURE = 'unsure';
 const OPEN_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SLOW_VERDICTS = new Set(['TLE', 'MLE']);
 
+/**
+ * A right guess made after the drill's hint counts as half a correct one, in
+ * the deck score and in every recognition accuracy (stats, weekly, report).
+ */
+export const HINT_CREDIT = 0.5;
+export const creditOf = (p) => (p.isCorrect ? (p.hinted ? HINT_CREDIT : 1) : 0);
+const CREDIT_EXPR = { $cond: ['$isCorrect', { $cond: ['$hinted', HINT_CREDIT, 1] }, 0] };
+
 export const isValidPrediction = (p) => p === UNSURE || PATTERN_KEYS.includes(p);
 export const isValidSlug = (s) => typeof s === 'string' && /^[a-z0-9-]{1,120}$/.test(s);
 
@@ -42,6 +50,7 @@ export function buildFeedback(pred) {
     predictedName: pred.predicted === UNSURE ? 'Not sure' : nameOf(pred.predicted),
     verdict: pred.verdict ?? null,
     source: pred.source,
+    hinted: Boolean(pred.hinted),
     createdAt: pred.createdAt,
   };
 
@@ -88,14 +97,17 @@ export function buildFeedback(pred) {
 /**
  * Save a guess. Extension guesses replace an earlier open guess for the same
  * problem (the student changed their mind); app guesses resolve immediately.
+ * Only drills have a hint.
  */
-export async function recordPrediction({ userId, slug, predicted, source }) {
+export async function recordPrediction({ userId, slug, predicted, source, hinted = false }) {
   const map = problemPatternBySlug.get(slug);
   const actual = map?.pattern ?? null;
   const isCorrect = !actual || predicted === UNSURE ? null : predicted === actual || predicted === map.secondary;
 
   if (source === 'app' || source === 'drill') {
-    const pred = await Prediction.create({ user: userId, slug, source, predicted, actual, isCorrect, resolvedAt: new Date() });
+    const pred = await Prediction.create({
+      user: userId, slug, source, predicted, actual, isCorrect, hinted: source === 'drill' && hinted === true, resolvedAt: new Date(),
+    });
     // Drills re-show misses in the next deck; the review queue is for re-solving.
     if (source === 'app') await queueIfMissed(userId, pred);
     return { prediction: pred, feedback: buildFeedback(pred) };
@@ -139,7 +151,7 @@ export async function latestFeedback(userId, slug) {
 
 /**
  * Recognition accuracy overall and per pattern. "Not sure" guesses count as
- * attempts but not as correct; unmapped problems are ignored.
+ * attempts but not as correct, hinted ones as half; unmapped problems are ignored.
  */
 export async function predictionStats(userId) {
   const rows = await Prediction.aggregate([
@@ -148,7 +160,7 @@ export async function predictionStats(userId) {
       $group: {
         _id: '$actual',
         attempts: { $sum: 1 },
-        correct: { $sum: { $cond: ['$isCorrect', 1, 0] } },
+        correct: { $sum: CREDIT_EXPR },
         unsure: { $sum: { $cond: [{ $eq: ['$predicted', UNSURE] }, 1, 0] } },
       },
     },

@@ -8,6 +8,7 @@ import Prediction from '../models/Prediction.js';
 import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { addDays, dayInZone } from './analyticsService.js';
+import { creditOf } from './predictionService.js';
 
 export const DEFAULT_WEEKS = 8;
 
@@ -25,7 +26,8 @@ const ratio = (c, n) => (n ? c / n : null);
  *
  * `firstTry` counts only the first-ever guess on each problem: repeat drills
  * of a problem already seen inflate "all guesses", so firstTry is the fairer
- * week-over-week measure for the pilot. "Not sure" counts as a wrong guess.
+ * week-over-week measure for the pilot. "Not sure" counts as a wrong guess,
+ * a right guess after the drill's hint as half.
  */
 export async function weeklyRecognition(userId, { tz = 'UTC', weeks = DEFAULT_WEEKS, now = new Date() } = {}) {
   const thisWeek = weekStartOf(dayInZone(now, tz));
@@ -40,7 +42,7 @@ export async function weeklyRecognition(userId, { tz = 'UTC', weeks = DEFAULT_WE
 
   const preds = await Prediction.find(
     { user: userId, resolvedAt: { $ne: null }, actual: { $ne: null } },
-    { slug: 1, source: 1, isCorrect: 1, resolvedAt: 1 }
+    { slug: 1, source: 1, isCorrect: 1, hinted: 1, resolvedAt: 1 }
   ).sort({ resolvedAt: 1 }).lean();
 
   const seen = new Set();
@@ -50,10 +52,10 @@ export async function weeklyRecognition(userId, { tz = 'UTC', weeks = DEFAULT_WE
     const day = dayInZone(p.resolvedAt, tz);
     const row = rows.get(weekStartOf(day));
     if (!row) continue;
-    const ok = p.isCorrect === true;
+    const credit = creditOf(p);
     row.attempts += 1;
-    if (ok) row.correct += 1;
-    if (isFirst) { row.firstTry.attempts += 1; if (ok) row.firstTry.correct += 1; }
+    row.correct += credit;
+    if (isFirst) { row.firstTry.attempts += 1; row.firstTry.correct += credit; }
     row.bySource[p.source] = (row.bySource[p.source] ?? 0) + 1;
     row.days.add(day);
   }
