@@ -15,7 +15,7 @@ import { PROBLEM_PATTERNS, problemPatternBySlug } from '../data/problemPatterns.
 import { listPatterns, progressBySlug } from './patternService.js';
 import { predictionStats } from './predictionService.js';
 import { reviewQueue, seedReviewsFromHistory } from './reviewService.js';
-import { dayInZone } from './analyticsService.js';
+import { dayInZone, goalAndStreak } from './analyticsService.js';
 import { onboardingStatus } from './pilotService.js';
 
 const PLAN_SIZE = 4;
@@ -58,11 +58,12 @@ const item = (kind, m, progress, reason, extra = {}) => ({
   ...extra,
 });
 
-export async function todayPlan(userId, { tz = 'UTC', now = new Date() } = {}) {
+export async function todayPlan(userId, { tz = 'UTC', now = new Date(), targetDailySolved = 1 } = {}) {
   await seedReviewsFromHistory(userId, now);
 
-  const [overview, stats, queue, onboarding] = await Promise.all([
+  const [overview, stats, queue, onboarding, daily] = await Promise.all([
     listPatterns(userId), predictionStats(userId), reviewQueue(userId, now), onboardingStatus(userId),
+    goalAndStreak({ userId, tz, targetDailySolved, now }),
   ]);
   const accMap = new Map(stats.perPattern.filter((p) => p.accuracy !== null).map((p) => [p.key, p]));
   const focus = chooseFocus(overview.patterns, accMap);
@@ -132,5 +133,8 @@ export async function todayPlan(userId, { tz = 'UTC', now = new Date() } = {}) {
     })),
     allPatterns: PATTERNS.length,
     onboarding,
+    // Same numbers as Analytics: problems first solved today, and the solving streak
+    goal: daily.today,
+    streak: daily.streak,
   };
 }

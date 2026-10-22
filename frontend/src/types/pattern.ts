@@ -149,6 +149,10 @@ export interface TodayPlan {
   recognition: { attempts: number; accuracy: number | null };
   patterns: { key: string; name: string; solved: number; total: number; accuracy: number | null }[];
   onboarding: Onboarding;
+  /** Problems first solved today vs the daily target (same as Analytics). */
+  goal: { date: string; solved: number; target: number; remaining: number; goalMet: boolean };
+  /** Consecutive days with an accepted submission; alive until today ends. */
+  streak: { current: number; longest: number; activeToday: boolean; lastActiveDay: string | null };
 }
 
 /** Getting-started steps; see backend/services/pilotService.js. */

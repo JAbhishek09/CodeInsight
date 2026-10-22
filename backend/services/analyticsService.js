@@ -137,6 +137,42 @@ function problemStages(match, tz) {
 
 const countIf = (cond) => ({ $sum: { $cond: [cond, 1, 0] } });
 
+/**
+ * Streak days: any day with an Accepted submission (re-solves included),
+ * plus the solve day of undated-by-submission manual entries. Shared by the
+ * analytics summary and Home, so the two always show the same streak.
+ */
+function activeDaysFacet(tz) {
+  const toDay = (expr) => ({ $dateToString: { format: '%Y-%m-%d', date: expr, timezone: tz } });
+  return [
+    {
+      $project: {
+        days: {
+          $concatArrays: [
+            { $map: { input: '$acs', as: 's', in: toDay('$$s.submittedAt') } },
+            { $cond: [{ $ne: ['$solvedDay', null] }, ['$solvedDay'], []] },
+          ],
+        },
+      },
+    },
+    { $unwind: '$days' },
+    { $group: { _id: '$days' } },
+    { $sort: { _id: 1 } },
+  ];
+}
+
+/** Today's goal: problems first solved today against the daily target. */
+function dailyGoal(today, solvedToday, targetDailySolved) {
+  const target = Number.isFinite(targetDailySolved) && targetDailySolved > 0 ? targetDailySolved : 1;
+  return {
+    date: today,
+    solved: solvedToday,
+    target,
+    remaining: Math.max(0, target - solvedToday),
+    goalMet: solvedToday >= target,
+  };
+}
+
 function facets({ tz, today, fromDay, fromMonth }) {
   const toDay = (expr) => ({ $dateToString: { format: '%Y-%m-%d', date: expr, timezone: tz } });
 
@@ -181,23 +217,7 @@ function facets({ tz, today, fromDay, fromMonth }) {
         },
       },
     ],
-    // Streak days: any day with an Accepted submission (re-solves included),
-    // plus the solve day of undated-by-submission manual entries.
-    activeDays: [
-      {
-        $project: {
-          days: {
-            $concatArrays: [
-              { $map: { input: '$acs', as: 's', in: toDay('$$s.submittedAt') } },
-              { $cond: [{ $ne: ['$solvedDay', null] }, ['$solvedDay'], []] },
-            ],
-          },
-        },
-      },
-      { $unwind: '$days' },
-      { $group: { _id: '$days' } },
-      { $sort: { _id: 1 } },
-    ],
+    activeDays: activeDaysFacet(tz),
     topics: [
       { $unwind: '$tags' },
       {
@@ -295,7 +315,6 @@ export async function buildAnalyticsSummary({
   }
 
   const solvedToday = solvedMap.get(today) || 0;
-  const target = Number.isFinite(targetDailySolved) && targetDailySolved > 0 ? targetDailySolved : 1;
 
   return {
     platform,
@@ -319,15 +338,30 @@ export async function buildAnalyticsSummary({
     solvedByMonth,
     submissionsByDay,
     streak: computeStreak(agg.activeDays.map((r) => r._id), today),
-    today: {
-      date: today,
-      solved: solvedToday,
-      target,
-      remaining: Math.max(0, target - solvedToday),
-      goalMet: solvedToday >= target,
-    },
+    today: dailyGoal(today, solvedToday, targetDailySolved),
     topics: agg.topics.map((r) => ({ tag: r._id, total: r.total, solved: r.solved, attempted: r.attempted })),
     languages: agg.languages.map((r) => ({ language: r._id, count: r.count })),
     verdicts,
+  };
+}
+
+/**
+ * Just today's goal and the streak (same rules as the summary), for Home.
+ * Much lighter than buildAnalyticsSummary.
+ */
+export async function goalAndStreak({ userId, tz = 'UTC', targetDailySolved = 1, now = new Date() }) {
+  const today = dayInZone(now, tz);
+  const [agg] = await Problem.aggregate([
+    ...problemStages({ user: userId }, tz),
+    {
+      $facet: {
+        solvedToday: [{ $match: { solvedDay: today } }, { $count: 'n' }],
+        activeDays: activeDaysFacet(tz),
+      },
+    },
+  ]);
+  return {
+    today: dailyGoal(today, agg.solvedToday[0]?.n ?? 0, targetDailySolved),
+    streak: computeStreak(agg.activeDays.map((r) => r._id), today),
   };
 }

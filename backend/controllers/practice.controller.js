@@ -18,7 +18,7 @@ import { isValidTimeZone } from '../services/analyticsService.js';
 export const getToday = asyncHandler(async (req, res) => {
   const tz = typeof req.query.tz === 'string' && req.query.tz ? req.query.tz : 'UTC';
   if (!isValidTimeZone(tz)) { res.status(400); throw new Error('Invalid tz.'); }
-  res.status(200).json({ success: true, data: await todayPlan(req.user._id, { tz }) });
+  res.status(200).json({ success: true, data: await todayPlan(req.user._id, { tz, targetDailySolved: req.user.targetDailySolved }) });
 });
 
 /**

@@ -37,7 +37,7 @@ export default function GetStarted({ status }: { status: Onboarding }) {
           const done = status[s.key];
           const isNext = s === next;
           return (
-            <li key={s.key}>
+            <li key={s.key} className={cn(!isNext && 'hidden sm:block')}>
               <Link
                 to={s.to}
                 aria-disabled={done}
