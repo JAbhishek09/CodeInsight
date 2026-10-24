@@ -130,6 +130,17 @@ export function PasswordInput({ id, value, onChange, autoComplete, invalid }: {
   );
 }
 
+/** Between "Continue with Google" and the email form. */
+export function OrDivider({ label = 'or use your email' }: { label?: string }) {
+  return (
+    <div className="flex items-center gap-3 text-xs text-muted-foreground" role="separator" aria-label={label}>
+      <span className="h-px flex-1 bg-border" aria-hidden />
+      {label}
+      <span className="h-px flex-1 bg-border" aria-hidden />
+    </div>
+  );
+}
+
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (

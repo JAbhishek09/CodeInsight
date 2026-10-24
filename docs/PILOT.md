@@ -77,6 +77,7 @@ Environment variables (see `backend/.env.example`):
 | `AI_DAILY_LIMIT` | `3` (see the AI note above); leave `GEMINI_MODELS` and `AI_AUTO_REVIEW` unset |
 | `TRUST_PROXY` | `1` on Render/Railway/Fly (behind one proxy) |
 | `PILOT_INVITE_CODE` | your code |
+| `GOOGLE_CLIENT_ID` | optional: a Google OAuth Web client ID, to show "Sign in with Google" (new Google accounts still need the invite code) |
 | `DNS_SERVERS` | `system` if the host's DNS resolves Atlas SRV records (most do) |
 | `EXTENSION_ID` | leave empty — see "Known limits" |
 

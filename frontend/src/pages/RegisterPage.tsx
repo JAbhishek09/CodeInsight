@@ -3,7 +3,8 @@ import { Link, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { getAuthConfig } from '../api/auth.api';
-import AuthLayout, { Field, FormError, PasswordInput } from '@/components/auth/AuthLayout';
+import AuthLayout, { Field, FormError, OrDivider, PasswordInput } from '@/components/auth/AuthLayout';
+import GoogleButton from '@/components/auth/GoogleButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -15,22 +16,41 @@ interface RegisterPageProps {
 const GOALS = [1, 2, 3, 5];
 
 export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
-  const { register, user, token, loading: authLoading, clearError } = useAuth();
+  const { register, loginWithGoogle, user, token, loading: authLoading, clearError } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [goal, setGoal] = useState(1);
   const [invite, setInvite] = useState('');
   const [inviteRequired, setInviteRequired] = useState(false);
-  useEffect(() => { getAuthConfig().then((c) => setInviteRequired(Boolean(c?.inviteRequired))).catch(() => {}); }, []);
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
+  useEffect(() => {
+    getAuthConfig().then((c) => {
+      setInviteRequired(Boolean(c?.inviteRequired));
+      setGoogleClientId(c?.googleClientId ?? null);
+    }).catch(() => {});
+  }, []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!authLoading && token && user) return <Navigate to="/home" replace />;
 
   const tooShort = password.length > 0 && password.length < 6;
+  const inviteField = inviteRequired ? { invite: invite.trim() } : {};
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const run = async (signUp: () => Promise<unknown>) => {
+    try {
+      setSubmitting(true);
+      await signUp();
+      onNavigate('/home');
+    } catch (err) {
+      setError((err as Error).message || "Couldn't create your account. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     clearError();
@@ -38,15 +58,18 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
       setError('Use at least 6 characters for your password.');
       return;
     }
-    try {
-      setSubmitting(true);
-      await register({ name: name.trim(), email: email.trim(), password, targetDailySolved: goal, ...(inviteRequired ? { invite: invite.trim() } : {}) });
-      onNavigate('/home');
-    } catch (err) {
-      setError((err as Error).message || "Couldn't create your account. Try again.");
-    } finally {
-      setSubmitting(false);
+    run(() => register({ name: name.trim(), email: email.trim(), password, targetDailySolved: goal, ...inviteField }));
+  };
+
+  // Name and email come from Google; the invite code and daily goal from this form
+  const handleGoogle = (credential: string) => {
+    setError(null);
+    clearError();
+    if (inviteRequired && !invite.trim()) {
+      setError('Enter your invite code first, then continue with Google.');
+      return;
     }
+    run(() => loginWithGoogle({ credential, targetDailySolved: goal, ...inviteField }));
   };
 
   return (
@@ -61,6 +84,12 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate }) => {
           <Field id="invite" label="Invite code" hint="From the person running the pilot.">
             <Input id="invite" required autoComplete="off" value={invite} onChange={(e) => setInvite(e.target.value)} />
           </Field>
+        )}
+        {googleClientId && (
+          <>
+            <GoogleButton clientId={googleClientId} text="signup_with" onCredential={handleGoogle} />
+            <OrDivider />
+          </>
         )}
         <Field id="name" label="Name">
           <Input id="name" autoComplete="name" required maxLength={50} value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" />

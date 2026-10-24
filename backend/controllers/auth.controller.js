@@ -2,6 +2,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import User from '../models/User.js';
 import Problem from '../models/Problem.js';
 import generateToken from '../utils/generateToken.js';
+import { verifyGoogleIdToken } from '../utils/googleIdToken.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
@@ -11,14 +12,33 @@ const normalizeEmail = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : 
 
 /** Pilot mode: when PILOT_INVITE_CODE is set, sign-up needs that code. */
 const inviteCode = () => (process.env.PILOT_INVITE_CODE || '').trim();
+const inviteOk = (invite) => !inviteCode() || String(invite ?? '').trim().toLowerCase() === inviteCode().toLowerCase();
+const WRONG_INVITE = 'That invite code isn’t right. Ask the person running the pilot for it.';
+
+/** Google sign-in is on when GOOGLE_CLIENT_ID (a Web client ID) is set. */
+const googleClientId = () => (process.env.GOOGLE_CLIENT_ID || '').trim();
+
+/** What sign-in, sign-up and Google sign-in send back: the user and a token. */
+const authPayload = (user) => ({
+  _id: user._id,
+  name: user.name,
+  email: user.email,
+  targetDailySolved: user.targetDailySolved,
+  solvedProblemsCount: user.solvedProblemsCount,
+  leetcodeHandle: user.leetcodeHandle,
+  codeforcesHandle: user.codeforcesHandle,
+  lastSyncedAt: user.lastSyncedAt,
+  syncStatus: user.syncStatus,
+  token: generateToken(user._id),
+});
 
 /**
- * @desc    What the sign-up screen needs to know
+ * @desc    What the sign-in and sign-up screens need to know
  * @route   GET /api/auth/config
  * @access  Public
  */
 export const getAuthConfig = (req, res) => {
-  res.status(200).json({ success: true, data: { inviteRequired: Boolean(inviteCode()) } });
+  res.status(200).json({ success: true, data: { inviteRequired: Boolean(inviteCode()), googleClientId: googleClientId() || null } });
 };
 
 /**
@@ -35,9 +55,9 @@ export const registerUser = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Please include name, email, and password');
   }
-  if (inviteCode() && String(invite ?? '').trim().toLowerCase() !== inviteCode().toLowerCase()) {
+  if (!inviteOk(invite)) {
     res.status(403);
-    throw new Error('That invite code isn’t right. Ask the person running the pilot for it.');
+    throw new Error(WRONG_INVITE);
   }
 
   const userExists = await User.findOne({ email });
@@ -55,19 +75,7 @@ export const registerUser = asyncHandler(async (req, res) => {
   });
 
   if (user) {
-    res.status(201).json({
-      success: true,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        targetDailySolved: user.targetDailySolved,
-        solvedProblemsCount: user.solvedProblemsCount,
-        leetcodeHandle: user.leetcodeHandle,
-        codeforcesHandle: user.codeforcesHandle,
-        token: generateToken(user._id),
-      },
-    });
+    res.status(201).json({ success: true, data: authPayload(user) });
   } else {
     res.status(400);
     throw new Error('Invalid user data');
@@ -91,25 +99,77 @@ export const loginUser = asyncHandler(async (req, res) => {
   const user = await User.findOne({ email }).select('+password');
 
   if (user && (await user.matchPassword(password))) {
-    res.status(200).json({
-      success: true,
-      data: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        targetDailySolved: user.targetDailySolved,
-        solvedProblemsCount: user.solvedProblemsCount,
-        leetcodeHandle: user.leetcodeHandle,
-        codeforcesHandle: user.codeforcesHandle,
-        lastSyncedAt: user.lastSyncedAt,
-        syncStatus: user.syncStatus,
-        token: generateToken(user._id),
-      },
-    });
+    res.status(200).json({ success: true, data: authPayload(user) });
   } else {
     res.status(401);
-    throw new Error('Invalid email or password');
+    // Same message whether or not the account exists (no email guessing)
+    throw new Error(googleClientId()
+      ? 'Invalid email or password. If you signed up with Google, use Continue with Google.'
+      : 'Invalid email or password');
   }
+});
+
+/**
+ * @desc    Sign in or sign up with Google. The page sends the ID token from
+ *          Google's "Sign in with Google" button; it must be valid for our
+ *          GOOGLE_CLIENT_ID. One email is one account: an existing account
+ *          with the same (Google-verified) email is signed in and linked.
+ *          A new account needs the pilot invite code, like email sign-up.
+ * @route   POST /api/auth/google  { credential, invite?, targetDailySolved? }
+ * @access  Public
+ */
+export const googleAuth = asyncHandler(async (req, res) => {
+  const clientId = googleClientId();
+  if (!clientId) {
+    res.status(404);
+    throw new Error('Google sign-in isn’t set up on this server.');
+  }
+  const { credential, invite, targetDailySolved } = req.body ?? {};
+  if (typeof credential !== 'string' || !credential) {
+    res.status(400);
+    throw new Error('Missing the Google sign-in credential.');
+  }
+
+  let profile;
+  try {
+    profile = await verifyGoogleIdToken(credential, clientId);
+  } catch {
+    res.status(401);
+    throw new Error('Google sign-in didn’t go through. Try again.');
+  }
+  const email = normalizeEmail(profile?.email);
+  if (!profile?.sub || !email || profile.email_verified !== true) {
+    res.status(401);
+    throw new Error('Your Google account’s email isn’t verified, so it can’t be used to sign in.');
+  }
+
+  let user = await User.findOne({ googleId: profile.sub }) ?? await User.findOne({ email });
+  if (user) {
+    if (user.googleId && user.googleId !== profile.sub) {
+      res.status(409);
+      throw new Error('This email is linked to a different Google account.');
+    }
+    if (!user.googleId) {
+      user.googleId = profile.sub;
+      await user.save();
+    }
+    return res.status(200).json({ success: true, data: authPayload(user) });
+  }
+
+  if (!inviteOk(invite)) {
+    res.status(403);
+    throw new Error(String(invite ?? '').trim()
+      ? WRONG_INVITE
+      : 'There’s no account for this Google email yet. Create one on the sign-up page with your invite code.');
+  }
+  const goal = Number(targetDailySolved);
+  user = await User.create({
+    name: (profile.name || email.split('@')[0]).trim().slice(0, 50),
+    email,
+    googleId: profile.sub,
+    targetDailySolved: Number.isInteger(goal) && goal >= 1 && goal <= 20 ? goal : 1,
+  });
+  res.status(201).json({ success: true, data: authPayload(user) });
 });
 
 /**
