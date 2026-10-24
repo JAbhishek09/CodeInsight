@@ -78,6 +78,7 @@ Environment variables (see `backend/.env.example`):
 | `TRUST_PROXY` | `1` on Render/Railway/Fly (behind one proxy) |
 | `PILOT_INVITE_CODE` | your code |
 | `GOOGLE_CLIENT_ID` | optional: a Google OAuth Web client ID, to show "Sign in with Google" (new Google accounts still need the invite code) |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `EMAIL_FROM` | for "Forgot password" emails, sent from your Gmail through the Gmail API. Render's free plan blocks SMTP, so `EMAIL_USERNAME`/`EMAIL_PASSWORD` only work locally or on a paid plan. Without either, "Forgot password" says email isn't set up |
 | `DNS_SERVERS` | `system` if the host's DNS resolves Atlas SRV records (most do) |
 | `EXTENSION_ID` | leave empty — see "Known limits" |
 

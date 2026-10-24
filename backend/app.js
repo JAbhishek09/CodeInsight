@@ -18,6 +18,7 @@ import importRoutes from './routes/import.routes.js';
 import extensionDownloadRoutes from './routes/extensionDownload.routes.js';
 import diagnoseRoutes from './routes/diagnose.routes.js';
 import { errorHandler } from './middleware/error.middleware.js';
+import { allowedOrigins, isSameHost } from './utils/origins.js';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
@@ -29,11 +30,8 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 
 // ─── Allowed Origins ──────────────────────────────────────────────────────────
 
-// CLIENT_URL may list several origins, comma-separated.
-export const allowedOrigins = [
-  ...(process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean),
-  ...(isProduction ? [] : ['http://localhost:5000', 'http://localhost:5174']),
-];
+// CLIENT_URL may list several origins, comma-separated (see utils/origins.js).
+export { allowedOrigins };
 
 /**
  * BUG-EXT-006 FIX: Lock extension CORS to a specific Extension ID in production.
@@ -54,11 +52,6 @@ export const allowedOrigins = [
  *   4. Add EXTENSION_ID=<that string> to backend/.env
  */
 export const ALLOWED_EXTENSION_ID = process.env.EXTENSION_ID || null;
-
-/** The page making the request is served by this same server (SERVE_CLIENT). */
-const isSameHost = (req, origin) => {
-  try { return new URL(origin).host === req.get('host'); } catch { return false; }
-};
 
 app.use(
   cors((req, done) => done(null, {

@@ -3,9 +3,10 @@ import User from '../models/User.js';
 import Problem from '../models/Problem.js';
 import generateToken from '../utils/generateToken.js';
 import { verifyGoogleIdToken } from '../utils/googleIdToken.js';
+import { mailConfigured, sendMail } from '../utils/mailer.js';
+import { siteUrlFor } from '../utils/origins.js';
 import { parseLeetcodeHandle, parseCodeforcesHandle } from '../utils/parseHandle.js';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
 
 /** Emails are stored lowercased and trimmed; match lookups to that. */
 const normalizeEmail = (e) => (typeof e === 'string' ? e.trim().toLowerCase() : '');
@@ -217,65 +218,69 @@ export const updateProfile = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: user });
 });
 
-export const forgotPassword = async (req, res) => {
-  try {
-    const user = await User.findOne({ email: req.body.email });
-    
-    // Security tip: Don't tell the client if the email doesn't exist
-    // Just pretend it worked to prevent email-guessing attacks.
-    if (!user) {
-      return res.status(200).json({ success: true, message: 'Email sent' });
-    }
+const RESET_MINUTES = 15;
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-    // 1. Generate a secure random token
-    const resetToken = crypto.randomBytes(32).toString('hex');
+/** The reset email: a button plus the plain link, in the app's indigo. */
+function resetEmail(name, resetUrl) {
+  const text = [
+    `Hi ${name},`,
+    '',
+    `Someone (hopefully you) asked to reset the password for your CodeInsight account. Open this link within ${RESET_MINUTES} minutes to choose a new one:`,
+    '',
+    resetUrl,
+    '',
+    'If you didn’t ask for this, ignore this email; your password stays the same.',
+  ].join('\n');
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 480px; padding: 24px; color: #18181b;">
+      <p style="margin: 0 0 16px; font-weight: 600; color: #4f46e5;">CodeInsight</p>
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>Someone (hopefully you) asked to reset the password for your CodeInsight account. Use the button within ${RESET_MINUTES} minutes to choose a new one.</p>
+      <p style="margin: 24px 0;">
+        <a href="${resetUrl}" style="background: #4f46e5; color: #ffffff; padding: 10px 18px; border-radius: 6px; text-decoration: none; display: inline-block;">Choose a new password</a>
+      </p>
+      <p style="font-size: 13px; color: #52525b;">Or open this link: <a href="${resetUrl}" style="color: #4f46e5;">${resetUrl}</a></p>
+      <p style="font-size: 13px; color: #52525b;">If you didn’t ask for this, ignore this email; your password stays the same.</p>
+    </div>`;
+  return { text, html };
+}
 
-    // 2. Hash the token and save it to the database (Security best practice!)
-    // We hash it in the DB so if the DB leaks, attackers can't use the reset tokens.
-    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    user.resetPasswordExpire = Date.now() + 15 * 60 * 1000; // 15 minutes from now
-    
-    await user.save();
-
-    // 3. Create the reset URL pointing to your React frontend
-    // Make sure to send the UNHASHED token in the email!
-    const resetUrl = `http://localhost:5173/reset-password?token=${resetToken}`;
-
-    // 4. Send the email using Nodemailer
-    const transporter = nodemailer.createTransport({
-      service: 'Gmail', // or SendGrid, AWS SES, etc.
-      auth: {
-        user: process.env.EMAIL_USERNAME,
-        pass: process.env.EMAIL_PASSWORD
-      }
-    });
-
-    await transporter.sendMail({
-      from: '"CodeInsight Support" <noreply@codeinsight.com>',
-      to: user.email,
-      subject: 'CodeInsight -Password Reset Request',
-      html: `
-       <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-          <h2 style="color: #db2777;">CodeInsight</h2>
-          <h3>You requested a password reset</h3>
-          <p>Click the button below to securely set a new password. This link will expire in 15 minutes.</p>
-          <a href="${resetUrl}" style="background-color: #db2777; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 10px;">
-            Reset Password
-          </a>
-          <p style="margin-top: 30px; font-size: 12px; color: #666;">
-            If you did not request this, please ignore this email. Your password will remain unchanged.
-          </p>
-        </div>
-      `
-    });
-
-    res.status(200).json({ success: true, message: 'Email sent' });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: 'Server error' });
+/**
+ * @desc    Email a password-reset link. Also how an account made with Google
+ *          adds a password. The link opens the site the request came from.
+ * @route   POST /api/auth/forgot-password  { email }
+ * @access  Public
+ */
+export const forgotPassword = asyncHandler(async (req, res) => {
+  if (!mailConfigured()) {
+    res.status(503);
+    throw new Error('Password reset by email isn’t set up on this server yet.'
+      + (googleClientId() ? ' If you signed up with Google, use Continue with Google.' : ''));
   }
-};
+
+  // Same answer whether or not the account exists (no email guessing)
+  const done = { success: true, message: 'If an account exists for that email, a reset link is on its way.' };
+  const email = normalizeEmail(req.body?.email);
+  const user = email ? await User.findOne({ email }) : null;
+  if (!user) return res.status(200).json(done);
+
+  // Only a hash of the token is stored, so a database leak can't reset passwords
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+  user.resetPasswordExpire = Date.now() + RESET_MINUTES * 60 * 1000;
+  await user.save();
+
+  const resetUrl = `${siteUrlFor(req)}/reset-password?token=${resetToken}`;
+  try {
+    await sendMail({ to: user.email, subject: 'Reset your CodeInsight password', ...resetEmail(user.name, resetUrl) });
+  } catch (err) {
+    console.error(`[Mail] Reset email to user ${user._id} failed: ${err.message}`);
+    res.status(502);
+    throw new Error('Couldn’t send the reset email right now. Try again in a few minutes.');
+  }
+  res.status(200).json(done);
+});
 export const resetPassword = async (req, res) => {
   try {
     // 1. Get the token from the request body or URL params
