@@ -4,6 +4,7 @@ dotenv.config();
 import dns from 'node:dns/promises';
 import connectDB from './config/db.js';
 import app, { allowedOrigins, ALLOWED_EXTENSION_ID } from './app.js';
+import { mailSetupReport } from './utils/mailer.js';
 
 // Refuse to start a production server with missing secrets.
 if (process.env.NODE_ENV === 'production') {
@@ -33,6 +34,7 @@ const server = app.listen(PORT, () => {
   } else {
     console.warn('⚠️  EXTENSION_ID not set — all chrome-extension:// origins allowed (dev mode).');
   }
+  console.log(`📧 ${mailSetupReport()}`);
 });
 
 process.on('unhandledRejection', (err) => {
