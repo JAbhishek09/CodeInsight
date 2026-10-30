@@ -115,3 +115,119 @@ export const PROBLEM_PROMPTS = {
   'perfect-squares': 'What is the fewest perfect squares (1, 4, 9, …) that add up to n?',
   'partition-equal-subset-sum': 'Can an array be split into two groups with exactly equal sums?',
 };
+
+/**
+ * The drill's hint: the words in each prompt that carry the clue. Each one is
+ * copied exactly from its prompt (the hint highlights it there), points at
+ * the deciding detail and never names the technique.
+ */
+export const PROMPT_CLUES = {
+  // Two pointers
+  'valid-palindrome': ['the same forwards and backwards'],
+  'merge-sorted-array': ['already in ascending order', 'empty slots at its end', 'without another array'],
+  'remove-duplicates-from-sorted-array': ['An ascending array', 'in place'],
+  'move-zeroes': ['keeping the other numbers in their original order', 'in place'],
+  'squares-of-a-sorted-array': ['An ascending array may hold negative numbers'],
+  'two-sum-ii-input-array-is-sorted': ['An ascending array', 'constant extra memory'],
+  '3sum': ['group of three numbers', 'add up to zero'],
+  '3sum-closest': ['three numbers', 'as close as possible to a given target'],
+  '4sum': ['group of four numbers', 'sum equals a target'],
+  'container-with-most-water': ['Choose two lines', 'hold the most water'],
+  'sort-colors': ['only 0s, 1s and 2s', 'in a single pass'],
+  'trapping-rain-water': ['held between the bars'],
+
+  // Prefix sums & hashing
+  'two-sum': ['an unordered array', 'add up to the target'],
+  'contains-duplicate': ['appear at least twice'],
+  'valid-anagram': ['rearranged to form another string'],
+  'range-sum-query-immutable': ['never changes', 'asked many times for the sum between two positions'],
+  'find-pivot-index': ['total of everything to its left', 'total of everything to its right'],
+  'group-anagrams': ['use exactly the same letters', 'the same group'],
+  'longest-consecutive-sequence': ['unordered array', 'in O(n) time'],
+  'product-of-array-except-self': ['product of every other element', 'Division is not allowed'],
+  'subarray-sum-equals-k': ['add up to exactly k', 'Values can be negative'],
+  'continuous-subarray-sum': ['total is a multiple of k'],
+  'contiguous-array': ['the same number of 0s and 1s'],
+
+  // Sliding window
+  'best-time-to-buy-and-sell-stock': ['Buy on one day and sell on a later day'],
+  'maximum-average-subarray-i': ['contiguous stretch of exactly k elements'],
+  'longest-substring-without-repeating-characters': ['longest stretch', 'no character repeats'],
+  'longest-repeating-character-replacement': ['change up to k characters', 'longest run'],
+  'permutation-in-string': ['some rearrangement of the first string', 'contiguous piece'],
+  'find-all-anagrams-in-a-string': ['every start index', 'rearrangement of a shorter pattern string'],
+  'minimum-size-subarray-sum': ['All numbers are positive', 'shortest contiguous stretch'],
+  'max-consecutive-ones-iii': ['flip at most k zeros', 'longest run of ones'],
+  'fruit-into-baskets': ['two baskets that each hold one fruit type', 'a contiguous row'],
+  'minimum-window-substring': ['shortest piece of string s', 'contains every character of string t'],
+  'sliding-window-maximum': ['each run of k consecutive elements'],
+
+  // Binary search
+  'binary-search': ['ascending array', 'O(log n)'],
+  'search-insert-position': ['ascending array of distinct values', 'O(log n)'],
+  'search-a-2d-matrix': ['each row starts above the previous row’s last value', 'Better than O(m·n)'],
+  'find-first-and-last-position-of-element-in-sorted-array': ['ascending array with repeats', 'O(log n)'],
+  'search-in-rotated-sorted-array': ['rotated at an unknown point', 'O(log n)'],
+  'find-minimum-in-rotated-sorted-array': ['rotated at an unknown point', 'O(log n)'],
+  'find-peak-element': ['in O(log n)'],
+  'koko-eating-bananas': ['the slowest speed that works'],
+  'capacity-to-ship-packages-within-d-days': ['the smallest ship capacity that gets them all delivered in time'],
+  'time-based-key-value-store': ['increasing timestamps', 'the latest timestamp not after a given time'],
+  'split-array-largest-sum': ['the largest part-sum is as small as possible'],
+  'median-of-two-sorted-arrays': ['two ascending arrays', 'O(log(m+n))'],
+
+  // Stack
+  'valid-parentheses': ['open and close in the right order'],
+  'next-greater-element-i': ['the first larger value to its right'],
+  'min-stack': ['push, pop, top', 'get the current smallest value'],
+  'evaluate-reverse-polish-notation': ['written in postfix order'],
+  'daily-temperatures': ['wait until a warmer temperature'],
+  'next-greater-element-ii': ['the next larger value going forward'],
+  'online-stock-span': ['how many consecutive days, ending today'],
+  'asteroid-collision': ['When two meet, the smaller explodes', 'What is left'],
+  'remove-k-digits': ['Remove k digits', 'the smallest possible number'],
+  'car-fleet': ['can’t pass', 'joins the slower one'],
+  'reverse-substrings-between-each-pair-of-parentheses': ['each pair of parentheses, innermost first'],
+  'largest-rectangle-in-histogram': ['the largest rectangle that fits inside it'],
+
+  // Graph & grid BFS/DFS
+  'flood-fill': ['every connected pixel'],
+  'number-of-islands': ['Count the groups of land cells joined'],
+  'max-area-of-island': ['the largest group of connected land cells'],
+  'number-of-provinces': ['separate groups of connected cities'],
+  'keys-and-rooms': ['keys to other rooms', 'get into every room'],
+  'clone-graph': ['deep copy', 'given one of its nodes'],
+  'rotting-oranges': ['Every minute', 'spoil the fresh oranges next to them'],
+  '01-matrix': ['every cell', 'distance to the nearest 0'],
+  'shortest-path-in-binary-matrix': ['the shortest route', 'moving in 8 directions'],
+  'pacific-atlantic-water-flow': ['flows to equal or lower neighbours', 'drain into both'],
+  'surrounded-regions': ['fully enclosed', 'Regions touching the border stay'],
+  'word-ladder': ['Change one letter at a time', 'the fewest words'],
+
+  // Heap & top-K
+  'last-stone-weight': ['Repeatedly smash the two heaviest stones'],
+  'kth-largest-element-in-a-stream': ['Numbers keep arriving', 'the k-th largest value'],
+  'kth-largest-element-in-an-array': ['k-th largest', 'without fully sorting it'],
+  'top-k-frequent-elements': ['the k values that appear most often'],
+  'top-k-frequent-words': ['the k most frequent words'],
+  'k-closest-points-to-origin': ['the k nearest'],
+  'sort-characters-by-frequency': ['appear most often come first'],
+  'task-scheduler': ['needs a gap of n time slots before repeating'],
+  'reorganize-string': ['no two neighbouring characters are the same'],
+  'merge-k-sorted-lists': ['Merge k linked lists', 'each already in ascending order'],
+  'find-median-from-data-stream': ['arrive one by one', 'the median'],
+
+  // 1-D dynamic programming
+  'climbing-stairs': ['1 or 2 steps at a time', 'How many different ways'],
+  'min-cost-climbing-stairs': ['go up 1 or 2 at a time', 'the cheapest way'],
+  'house-robber': ['never from two houses next to each other', 'the most you can take'],
+  'house-robber-ii': ['never taking from two neighbouring houses', 'in a circle'],
+  'maximum-subarray': ['the largest sum'],
+  'maximum-product-subarray': ['largest product', 'Values may be negative or zero'],
+  'decode-ways': ['encoded as 1–26', 'How many ways'],
+  'coin-change': ['the fewest coins that add up to it exactly'],
+  'word-break': ['split into a sequence of words'],
+  'longest-increasing-subsequence': ['you can pick', 'keeping the original order'],
+  'perfect-squares': ['the fewest perfect squares', 'add up to n'],
+  'partition-equal-subset-sum': ['two groups with exactly equal sums'],
+};

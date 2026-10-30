@@ -8,6 +8,7 @@ import { resolveOnSubmission } from '../services/predictionService.js';
 import { tryConsumeAiQuota } from '../utils/aiQuota.js';
 import { diagnoseProblem } from '../services/diagnosisService.js';
 import { scheduleReview } from '../services/reviewService.js';
+import { fillMissingMetaSoon } from '../services/problemMetaService.js';
 import User from '../models/User.js';
 
 /**
@@ -142,7 +143,8 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
   // BUG-INJ-001 FIX — Step 1: ensure the problem document exists using $setOnInsert.
   // We use new: false here intentionally — we do NOT need the returned doc yet
   // because Step 2 (the atomic push) will return the final document.
-  await Problem.findOneAndUpdate(
+  // (It returns null when the problem is new.)
+  const existed = await Problem.findOneAndUpdate(
     {
       user: userId,
       platform: 'leetcode',
@@ -164,6 +166,8 @@ export const ingestLeetCodeSubmission = asyncHandler(async (req, res) => {
       setDefaultsOnInsert: true,
     }
   );
+  // A new problem has no difficulty or topic tags yet — fetch them from LeetCode
+  if (!existed) fillMissingMetaSoon(userId);
 
   // ── 4. Atomic push — duplicate-safe, race-condition-free ─────────────────────
   // BUG-INJ-001 FIX — Step 2: push the submission atomically using a filter that

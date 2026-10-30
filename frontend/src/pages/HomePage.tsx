@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, CalendarClock, CheckCircle2, ExternalLink, Play, Target, Zap } from 'lucide-react';
+import { ArrowRight, CalendarClock, Check, CheckCircle2, ExternalLink, Flame, Play, Target, Zap } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useToday } from '../hooks/usePractice';
 import { useWeeklyRecognition } from '../hooks/usePredictions';
 import QueryError from '../components/QueryError';
 import GetStarted from '../components/home/GetStarted';
 import RecognitionTrend from '../components/home/RecognitionTrend';
+import { MIN_POOLED, recognitionChange } from '@/lib/recognition';
 import PlanList, { MINUTES } from '../components/home/PlanList';
 import ScoreRing from '../components/home/ScoreRing';
 import { Button } from '@/components/ui/button';
@@ -23,12 +24,104 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
+function streakNote(st: TodayPlan['streak']) {
+  if (st.current === 0) return 'solve one to start';
+  if (!st.activeToday) return 'solve one today to keep it';
+  return st.longest > st.current ? `best ${st.longest}` : 'your best yet';
+}
+
+/** Today's goal as a ring: primary while in progress, success once met. */
+function GoalRing({ goal, size, stroke, children }: { goal: TodayPlan['goal']; size: number; stroke: number; children: React.ReactNode }) {
+  return (
+    <ScoreRing value={goal.target ? goal.solved / goal.target : 0} size={size} stroke={stroke} color={goal.goalMet ? 'var(--success)' : 'var(--primary)'}>
+      {children}
+    </ScoreRing>
+  );
+}
+
+/** Phones: three compact tiles so today's plan still starts on the first screen. */
+function MiniStats({ d, delta }: { d: TodayPlan; delta: number | null }) {
+  const { goal, streak } = d;
+  const tile = 'flex min-w-0 flex-col items-center gap-1 rounded-xl border border-border bg-background/40 px-1.5 py-2.5 text-center';
+  return (
+    <dl className="grid grid-cols-3 gap-2 lg:hidden">
+      <div className={tile}>
+        <ScoreRing value={d.recognition.accuracy} size={44} stroke={4}>
+          <span className="text-[11px] font-semibold tabular-nums text-foreground">{pct(d.recognition.accuracy)}</span>
+        </ScoreRing>
+        <dt className="text-[11px] font-medium text-foreground">Recognition</dt>
+        <dd className={cn('text-[10px] tabular-nums', delta == null ? 'text-subtle' : delta >= 0 ? 'text-success' : 'text-danger')}>
+          {delta == null ? `${d.recognition.attempts} guesses` : `${delta >= 0 ? '+' : ''}${delta} pts`}
+        </dd>
+      </div>
+      <div className={tile}>
+        <GoalRing goal={goal} size={44} stroke={4}>
+          {goal.goalMet
+            ? <Check className="size-4 text-success" aria-hidden />
+            : <span className="text-[11px] font-semibold tabular-nums text-foreground">{goal.solved}/{goal.target}</span>}
+        </GoalRing>
+        <dt className="text-[11px] font-medium text-foreground">Today’s goal</dt>
+        <dd className="text-[10px] text-muted-foreground">{goal.goalMet ? `${goal.solved}/${goal.target} done` : `${goal.remaining} to go`}</dd>
+      </div>
+      <div className={tile}>
+        <span className={cn('flex size-11 items-center justify-center gap-0.5 rounded-full', streak.activeToday ? 'bg-warning/15' : 'bg-surface-2')}>
+          <Flame className={cn('size-4', streak.activeToday ? 'fill-warning/30 text-warning' : 'text-muted-foreground')} aria-hidden />
+          <span className="text-sm font-semibold tabular-nums text-foreground">{streak.current}</span>
+        </span>
+        <dt className="text-[11px] font-medium text-foreground">Day streak</dt>
+        <dd className="text-[10px] leading-tight text-muted-foreground">{streakNote(streak)}</dd>
+      </div>
+    </dl>
+  );
+}
+
+/** Wide screens: the big recognition ring with trend, goal and streak beside it. */
+function WideStats({ d, change }: { d: TodayPlan; change: ReturnType<typeof recognitionChange> }) {
+  const { goal, streak } = d;
+  const delta = change?.delta ?? null;
+  return (
+    <div className="hidden items-center gap-8 lg:flex">
+      <ScoreRing value={d.recognition.accuracy} size={132} stroke={11}>
+        <span className="text-3xl font-semibold tracking-tight text-foreground">{pct(d.recognition.accuracy)}</span>
+        <span className="text-[11px] text-muted-foreground">recognition</span>
+      </ScoreRing>
+      <dl className="space-y-3.5 text-sm">
+        <div>
+          <dt className="text-xs text-muted-foreground">Trend</dt>
+          <dd
+            className={cn('font-semibold tabular-nums', delta == null ? 'text-subtle' : delta >= 0 ? 'text-success' : 'text-danger')}
+            title={change ? `First guesses: ${pct(change.from)} when you started, ${pct(change.to)} lately` : `Shows once you have ${MIN_POOLED} early and ${MIN_POOLED} recent first guesses`}
+          >
+            {delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta} pts`}
+            {change && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{pct(change.from)} → {pct(change.to)}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Today’s goal</dt>
+          <dd className="flex items-center gap-2">
+            <GoalRing goal={goal} size={22} stroke={3}>{null}</GoalRing>
+            <span className="font-semibold tabular-nums text-foreground">{goal.solved}/{goal.target}</span>
+            <span className={cn('text-xs', goal.goalMet ? 'text-success' : 'text-muted-foreground')}>
+              {goal.goalMet ? 'done' : `${goal.remaining} to go`}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Streak</dt>
+          <dd className="flex items-center gap-1.5">
+            <Flame className={cn('size-4', streak.activeToday ? 'fill-warning/30 text-warning' : 'text-muted-foreground')} aria-hidden />
+            <span className="font-semibold tabular-nums text-foreground">{plural(streak.current, 'day')}</span>
+            <span className="text-xs text-muted-foreground">· {streakNote(streak)}</span>
+          </dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 function Hero({ d, name }: { d: TodayPlan; name: string }) {
   const weekly = useWeeklyRecognition(8);
-  const weeks = (weekly.data ?? []).filter((w) => w.firstTry.attempts >= 3);
-  const delta = weeks.length >= 2
-    ? Math.round(((weeks[weeks.length - 1].firstTry.accuracy ?? 0) - (weeks[0].firstTry.accuracy ?? 0)) * 100)
-    : null;
+  const change = recognitionChange(weekly.data);
   const next = d.plan[0];
   const minutes = d.plan.reduce((n, it) => n + MINUTES[it.difficulty], 0);
   const reviews = d.plan.filter((p) => p.kind === 'review').length;
@@ -49,57 +142,38 @@ function Hero({ d, name }: { d: TodayPlan; name: string }) {
         style={{ backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)', backgroundSize: '32px 32px' }}
         aria-hidden
       />
-      <div className="relative flex flex-col gap-8 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+      <div className="relative flex flex-col gap-5 p-4 sm:gap-8 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 max-w-xl">
-          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">{date}</p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground sm:text-xs">{date}</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:mt-2 sm:text-4xl">
             {greeting()}, {name}
           </h1>
-          <p className="mt-3 text-base leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground sm:mt-3 sm:text-base">
             {d.plan.length > 0 ? (
               <>
                 <span className="text-foreground">{plural(d.plan.length, 'problem')}</span> on today’s plan
-                {reviews > 0 && <> including {plural(reviews, 'review')}</>} — about{' '}
-                <span className="text-foreground">{minutes} minutes</span>. Guess the pattern before you write any code.
+                {reviews > 0 && <span className="hidden sm:inline"> including {plural(reviews, 'review')}</span>} — about{' '}
+                <span className="text-foreground">{minutes} min</span>
+                <span className="hidden sm:inline">. Guess the pattern before you write any code.</span>
               </>
             ) : 'Nothing scheduled today. Keep your eye sharp with a quick drill.'}
           </p>
-          <div className="mt-6 flex flex-wrap gap-2.5">
+          <div className="mt-4 flex gap-2 sm:mt-6 sm:flex-wrap sm:gap-2.5">
             {next && (
-              <Button size="lg" asChild>
-                <a href={next.url} target="_blank" rel="noopener noreferrer">
-                  <Play className="fill-current" /> Start: {next.title}
+              <Button size="lg" className="min-w-0 flex-1 sm:flex-none" asChild>
+                <a href={next.url} target="_blank" rel="noopener noreferrer" title={`Start: ${next.title}`}>
+                  <Play className="fill-current" /> <span className="min-w-0 truncate">Start: {next.title}</span>
                 </a>
               </Button>
             )}
-            <Button size="lg" variant="outline" asChild>
-              <Link to="/drill"><Zap /> 2-minute drill</Link>
+            <Button size="lg" variant="outline" className="shrink-0" asChild>
+              <Link to="/drill" aria-label="2-minute drill"><Zap /> <span className="sm:hidden">Drill</span><span className="hidden sm:inline">2-minute drill</span></Link>
             </Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-6 sm:gap-8">
-          <ScoreRing value={d.recognition.accuracy} size={132} stroke={11}>
-            <span className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">{pct(d.recognition.accuracy)}</span>
-            <span className="text-[11px] text-muted-foreground">recognition</span>
-          </ScoreRing>
-          <dl className="space-y-3 text-sm">
-            <div>
-              <dt className="text-xs text-muted-foreground">Trend</dt>
-              <dd className={cn('font-semibold tabular-nums', delta == null ? 'text-subtle' : delta >= 0 ? 'text-success' : 'text-danger')}>
-                {delta == null ? '—' : `${delta >= 0 ? '+' : ''}${delta} pts`}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Guesses so far</dt>
-              <dd className="font-semibold tabular-nums text-foreground">{d.recognition.attempts}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Solved today</dt>
-              <dd className="font-semibold tabular-nums text-foreground">{d.doneToday.length}</dd>
-            </div>
-          </dl>
-        </div>
+        <MiniStats d={d} delta={change?.delta ?? null} />
+        <WideStats d={d} change={change} />
       </div>
     </section>
   );
@@ -173,7 +247,7 @@ function DoneToday({ items }: { items: TodayPlan['doneToday'] }) {
   return (
     <section aria-labelledby="done-title" className="rounded-xl border border-border bg-surface-1 p-5">
       <h2 id="done-title" className="flex items-center gap-2 text-sm font-semibold text-foreground">
-        <CheckCircle2 className="size-4 text-success" aria-hidden /> Solved today
+        <CheckCircle2 className="size-4 text-success" aria-hidden /> Key problems solved today
       </h2>
       <ul className="mt-3 space-y-1.5">
         {items.map((x) => (
@@ -222,7 +296,7 @@ function SkillMap({ d }: { d: TodayPlan }) {
                   <span className="text-[11px] font-semibold tabular-nums text-foreground">{Math.round(r * 100)}</span>
                 </ScoreRing>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
+                  <span className="block text-sm font-medium leading-snug text-foreground">{p.name}</span>
                   <span className="block text-xs tabular-nums text-muted-foreground">
                     {p.solved}/{p.total}{p.accuracy != null && <> · {pct(p.accuracy)} spotted</>}
                   </span>

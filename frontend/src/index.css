@@ -59,15 +59,21 @@
   --heat-4: #8f92f7;
 
   /* Pattern colours — one vivid hue per pattern, used everywhere that pattern
-     appears (skill tree, badges, problem pages). */
-  --pat-two-pointers:   #22d3ee;
-  --pat-prefix-hashing: #a3e635;
-  --pat-sliding-window: #a78bfa;
-  --pat-binary-search:  #fbbf24;
-  --pat-stack:          #fb7185;
-  --pat-bfs-dfs:        #34d399;
-  --pat-heap-top-k:     #fb923c;
-  --pat-dp-1d:          #e879f9;
+     appears (skill tree, badges, problem pages). Colour-blind safe where it
+     counts: checked with the dataviz validator (Machado 2009 protan/deutan,
+     OKLab) on every pair that sits side by side — lists in this order, the
+     skill tree (rows 2-3-3) and two-column grids — in both themes: colour-
+     blind ΔE ≥ 8.5 (lists) / 8.8 (tree), full-colour ΔE ≥ 15.9 for all pairs.
+     Names always go with the colour. Re-run the validator before changing one. */
+  --pat-two-pointers:   #1969e3;   /* blue */
+  --pat-prefix-hashing: #81a10d;   /* lime */
+  --pat-sliding-window: #cb234b;   /* crimson */
+  --pat-binary-search:  #de55b7;   /* pink */
+  --pat-stack:          #9145ca;   /* purple */
+  --pat-bfs-dfs:        #c06e0b;   /* orange */
+  --pat-heap-top-k:     #0a8566;   /* teal */
+  --pat-dp-1d:          #10a0ce;   /* sky */
+  --pat-ink-mix: 75%;   /* .pat-text: share of pattern colour vs text colour (≥ 5:1) */
   --pat-glow: 0.35;     /* glow strength around pattern nodes */
 
   --radius: 0.625rem;
@@ -119,14 +125,18 @@
   --heat-3: #6c6ae6;
   --heat-4: #4338ca;
 
-  --pat-two-pointers:   #0e7490;
-  --pat-prefix-hashing: #4d7c0f;
-  --pat-sliding-window: #7c3aed;
-  --pat-binary-search:  #b45309;
-  --pat-stack:          #e11d48;
-  --pat-bfs-dfs:        #047857;
-  --pat-heap-top-k:     #c2410c;
-  --pat-dp-1d:          #a21caf;
+  /* Same hues stepped for the light surface; colour-blind ΔE ≥ 10.1 (lists) /
+     7.1 (tree), full-colour ≥ 16.4. Lime, orange and sky are under 3:1 on
+     white, which is fine only because the pattern name is always shown. */
+  --pat-two-pointers:   #2776f1;
+  --pat-prefix-hashing: #99bf12;
+  --pat-sliding-window: #9f0735;
+  --pat-binary-search:  #dd55b7;
+  --pat-stack:          #883bbf;
+  --pat-bfs-dfs:        #f68f11;
+  --pat-heap-top-k:     #10a780;
+  --pat-dp-1d:          #15bef4;
+  --pat-ink-mix: 60%;   /* ≥ 4.8:1 on white and on pattern tints */
   --pat-glow: 0.18;
 
   --elev-card: 0 1px 2px rgb(9 9 11 / 0.05);
@@ -222,7 +232,8 @@
   .page-enter { animation: fadeSlideIn 0.2s ease forwards; }
 
   /* Pattern-coloured surfaces. Set --pc (e.g. style={{'--pc': 'var(--pat-stack)'}}). */
-  .pat-text   { color: var(--pc); }
+  /* Text in a pattern's colour, pulled toward the text colour so it always reads */
+  .pat-text   { color: color-mix(in oklab, var(--pc) var(--pat-ink-mix), var(--foreground)); }
   .pat-tint   { background-color: color-mix(in oklab, var(--pc) 14%, transparent); }
   .pat-border { border-color: color-mix(in oklab, var(--pc) 55%, transparent); }
   .pat-glow   { box-shadow: 0 0 0 1px color-mix(in oklab, var(--pc) 60%, transparent),
@@ -232,6 +243,19 @@
   /* Guess-the-pattern drill */
   .drill-card   { animation: drillIn 0.28s cubic-bezier(.2,.8,.2,1) both; }
   .drill-reveal { animation: fadeSlideIn 0.22s ease both; }
+  /* The hint: a highlighter sweeps over the clue words (tint + underline, not colour alone) */
+  .drill-clue {
+    color: inherit;
+    border-radius: 0.2em;
+    background: linear-gradient(color-mix(in oklab, var(--primary) 26%, transparent), color-mix(in oklab, var(--primary) 26%, transparent)) no-repeat left / 0% 100%;
+    text-decoration: underline 2px color-mix(in oklab, var(--primary) 75%, transparent);
+    text-underline-offset: 0.28em;
+    animation: clueSweep 0.55s cubic-bezier(.2,.8,.2,1) 0.05s forwards;
+  }
+}
+
+@keyframes clueSweep {
+  to { background-size: 100% 100%; }
 }
 
 @keyframes drillIn {

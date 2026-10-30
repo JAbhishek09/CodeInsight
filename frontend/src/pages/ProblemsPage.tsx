@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ExternalLink, Pencil, Plus, Search, Sparkles, Trash2, X,
+  ArrowDown, ArrowUp, CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, ExternalLink, Pencil, Plus, Search, Sparkles, Trash2, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAnalytics } from '../hooks/useAnalytics';
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { relativeTime, dateTime } from '@/lib/format';
+import { PATTERN_OPTIONS, patternStyle } from '@/lib/patterns';
 
 interface ProblemsPageProps {
   onNavigate: (path: string) => void;
@@ -97,6 +98,44 @@ function AiCell({ p }: { p: ProblemListItem }) {
   );
 }
 
+/** Pattern name with its colour dot (identity is the name; the dot is a cue). */
+function PatternLabel({ pattern, className }: { pattern: ProblemListItem['pattern']; className?: string }) {
+  if (!pattern) return <span className={cn('text-xs text-subtle', className)}>—</span>;
+  return (
+    <Link to={`/patterns/${pattern.key}`} title={pattern.name}
+      className={cn('inline-flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden text-sm text-muted-foreground hover:text-foreground', className)}>
+      <span className="size-2 shrink-0 rounded-full" style={{ ...patternStyle(pattern.key), background: 'var(--pc)' }} aria-hidden />
+      <span className="min-w-0 truncate">{pattern.name}</span>
+    </Link>
+  );
+}
+
+const GUESS = {
+  spotted: { label: 'Spotted', Icon: CheckCircle2, className: 'text-success' },
+  missed: { label: 'Missed', Icon: XCircle, className: 'text-danger' },
+  unsure: { label: 'Not sure', Icon: CircleHelp, className: 'text-warning' },
+} as const;
+
+/** The guess you made while solving (extension or problem page). */
+function GuessCell({ p }: { p: ProblemListItem }) {
+  if (!p.pattern) return <span className="text-xs text-subtle">—</span>;
+  if (!p.guess) {
+    return <span className="text-xs text-subtle" title="No guess yet — pick the pattern before you solve">—</span>;
+  }
+  const g = GUESS[p.guess.result];
+  const detail = p.guess.result === 'missed' ? `You said ${p.guess.predictedName}; it's ${p.pattern.name}` : p.guess.result === 'spotted' ? `You spotted ${p.pattern.name}` : 'You weren’t sure';
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className={cn('inline-flex items-center gap-1 rounded text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring', g.className)}>
+          <g.Icon className="size-3.5" aria-hidden /> {g.label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{detail}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function TableSkeleton() {
   return (
     <div className="space-y-2 p-4" aria-busy="true" aria-label="Loading problems">
@@ -114,6 +153,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
   const difficulty = params.get('difficulty') ?? '';
   const platform   = params.get('platform') ?? '';
   const tag        = params.get('tag') ?? '';
+  const pattern    = params.get('pattern') ?? '';
   const sort       = params.get('sort') ?? DEFAULT_SORT;
   const page       = Math.max(1, Number(params.get('page')) || 1);
 
@@ -142,6 +182,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
     ...(difficulty && { difficulty }),
     ...(platform && { platform }),
     ...(tag && { tag }),
+    ...(pattern && { pattern }),
   });
   const summary = useAnalytics('all');
   const del = useDeleteProblem();
@@ -165,7 +206,8 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
   const from = total ? (page - 1) * PAGE_SIZE + 1 : 0;
   const to = Math.min(page * PAGE_SIZE, total);
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const hasFilters = Boolean(q || status || difficulty || platform || tag);
+  const hasFilters = Boolean(q || status || difficulty || platform || tag || pattern);
+  const clearFilters = () => { setSearchInput(''); setParam({ q: '', status: '', difficulty: '', platform: '', tag: '', pattern: '' }); };
 
   const topicOptions = (summary.data?.topics ?? [])
     .slice()
@@ -212,6 +254,8 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
             className="h-8 pl-8"
           />
         </div>
+        <FilterSelect label="Pattern" value={pattern} onChange={(v) => setParam({ pattern: v })}
+          options={PATTERN_OPTIONS.map((o) => ({ value: o.key, label: o.name }))} />
         <FilterSelect label="Status" value={status} onChange={(v) => setParam({ status: v })}
           options={['Solved', 'Attempted', 'To Do'].map((s) => ({ value: s, label: s }))} />
         <FilterSelect label="Difficulty" value={difficulty} onChange={(v) => setParam({ difficulty: v })}
@@ -227,7 +271,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
             options={[{ value: 'leetcode', label: 'LeetCode' }, { value: 'codeforces', label: 'Codeforces' }, { value: 'manual', label: 'Manual' }]} />
         )}
         {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={() => { setSearchInput(''); setParam({ q: '', status: '', difficulty: '', platform: '', tag: '' }); }}>
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
             <X /> Clear
           </Button>
         )}
@@ -248,7 +292,7 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
                 : 'Import your LeetCode history from your profile, or add a problem yourself.'}
             </p>
             {hasFilters
-              ? <Button variant="outline" size="sm" onClick={() => { setSearchInput(''); setParam({ q: '', status: '', difficulty: '', platform: '', tag: '' }); }}>Clear filters</Button>
+              ? <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button>
               : <Button variant="outline" size="sm" asChild><Link to="/profile?tab=import">Import history</Link></Button>}
           </div>
         ) : (
@@ -256,11 +300,13 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <SortHeader label="Problem" field="title" sort={sort} onSort={(s) => setParam({ sort: s })} className="pl-4" />
+                <TableHead className="hidden md:table-cell">Pattern</TableHead>
                 <SortHeader label="Difficulty" field="difficulty" sort={sort} onSort={(s) => setParam({ sort: s })} className="hidden sm:table-cell" />
                 <TableHead>Status</TableHead>
-                <SortHeader label="Submissions" field="submissionCount" sort={sort} onSort={(s) => setParam({ sort: s })} className="hidden text-right md:table-cell" />
+                <TableHead className="hidden sm:table-cell" title="The pattern you picked while solving it">Your guess</TableHead>
+                <SortHeader label="Submissions" field="submissionCount" sort={sort} onSort={(s) => setParam({ sort: s })} className="hidden text-right lg:table-cell" />
                 <SortHeader label="Last activity" field="lastSubmittedAt" sort={sort} onSort={(s) => setParam({ sort: s })} className="hidden lg:table-cell" />
-                <TableHead className="hidden md:table-cell">AI</TableHead>
+                <TableHead className="hidden xl:table-cell">AI</TableHead>
                 <TableHead className="w-20 pr-4"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
@@ -269,15 +315,17 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
                 const manual = p.platform === 'manual';
                 return (
                   <TableRow key={p._id} className="group">
-                    <TableCell className="max-w-0 whitespace-normal pl-4 sm:w-[45%]">
+                    <TableCell className="max-w-0 whitespace-normal pl-4 sm:w-[40%]">
                       <Link to={`/problems/${p._id}`} className="line-clamp-2 font-medium text-foreground hover:text-primary sm:line-clamp-none sm:block sm:truncate">
                         {p.title}
                       </Link>
                       <div className="mt-0.5 flex items-center gap-2 truncate text-xs text-subtle">
                         <DifficultyBadge difficulty={p.difficulty} className="sm:hidden" />
-                        <span className="truncate">{p.tags.slice(0, 3).join(' · ')}</span>
+                        {p.pattern && <PatternLabel pattern={p.pattern} className="text-xs md:hidden" />}
+                        <span className={cn('truncate', p.pattern && 'hidden md:inline')}>{p.tags.slice(0, 3).join(' · ')}</span>
                       </div>
                     </TableCell>
+                    <TableCell className="hidden md:table-cell"><div className="w-36 xl:w-44"><PatternLabel pattern={p.pattern} /></div></TableCell>
                     <TableCell className="hidden sm:table-cell"><DifficultyBadge difficulty={p.difficulty} /></TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -285,14 +333,15 @@ export const ProblemsPage: React.FC<ProblemsPageProps> = () => {
                         {p.status}
                       </span>
                     </TableCell>
-                    <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell"
+                    <TableCell className="hidden sm:table-cell"><GuessCell p={p} /></TableCell>
+                    <TableCell className="hidden text-right tabular-nums text-muted-foreground lg:table-cell"
                       title={`${p.acceptedCount} accepted of ${p.submissionCount}`}>
                       <span className="text-foreground">{p.acceptedCount}</span> / {p.submissionCount}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground lg:table-cell" title={dateTime(p.lastSubmittedAt)}>
                       {relativeTime(p.lastSubmittedAt)}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell"><AiCell p={p} /></TableCell>
+                    <TableCell className="hidden xl:table-cell"><AiCell p={p} /></TableCell>
                     <TableCell className="pr-4">
                       <div className="flex justify-end gap-0.5 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                         {manual ? (

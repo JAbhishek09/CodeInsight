@@ -7,6 +7,8 @@ interface HeatmapProps {
   weeks?: number;
   /** What a count means, e.g. ['problem solved', 'problems solved']. */
   unit?: [singular: string, plural: string];
+  /** Square size in px (larger squares suit fewer weeks). */
+  cellSize?: number;
 }
 
 const LEVELS = [
@@ -34,7 +36,7 @@ const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
  * submissionsByDay from GET /api/analytics/summary. Days with no activity
  * render at the lowest intensity, so new accounts get an empty grid.
  */
-export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'problems solved'] }: HeatmapProps) {
+export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'problems solved'], cellSize = 11 }: HeatmapProps) {
   const label = (n: number) => `${n} ${n === 1 ? unit[0] : unit[1]}`;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -53,7 +55,7 @@ export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'p
   }
 
   const colCount = Math.ceil(cells.length / 7);
-  const CELL = 11;
+  const CELL = cellSize;
   const GAP = 3;
   const STEP = CELL + GAP;
   const TOP_PAD = 16;
@@ -129,7 +131,7 @@ export default function Heatmap({ data, weeks = 53, unit = ['problem solved', 'p
         </svg>
       </div>
       <div className="flex items-center justify-between text-[10px] text-subtle">
-        <span><span className="tabular-nums">{label(totalSolves)}</span> in the last year</span>
+        <span><span className="tabular-nums">{label(totalSolves)}</span> {weeks >= 53 ? 'in the last year' : `in the last ${weeks} weeks`}</span>
         <div className="flex items-center gap-1.5">
           <span>Less</span>
           {LEVELS.map((l, i) => (

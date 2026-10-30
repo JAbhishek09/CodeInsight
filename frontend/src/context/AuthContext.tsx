@@ -4,10 +4,12 @@ import { createContext, useState, useEffect, useCallback, ReactNode } from 'reac
 import {
   login as loginApi,
   register as registerApi,
+  googleSignIn as googleSignInApi,
   getMe as getMeApi,
   logout as logoutApi,
   LoginPayload,
   RegisterPayload,
+  GoogleSignInPayload,
 } from '../api/auth.api';
 
 export interface UserProfile {
@@ -37,6 +39,8 @@ export interface AuthContextType {
   retrySession: () => Promise<void>;
   login: (credentials: LoginPayload) => Promise<any>;
   register: (userData: RegisterPayload) => Promise<any>;
+  /** Sign in (or sign up) with the ID token from Google's button. */
+  loginWithGoogle: (payload: GoogleSignInPayload) => Promise<any>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   clearError: () => void;
@@ -92,11 +96,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loadCurrentUser();
   }, [loadCurrentUser]);
 
-  const login = async (credentials: LoginPayload) => {
+  /** Run a sign-in call (email, sign-up or Google), then load the user it signed in. */
+  const signIn = async (call: () => Promise<any>, fallback: string) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await loginApi(credentials);
+      const res = await call();
       if (res?.success && res?.data?.token) {
         setToken(res.data.token);
         setSessionError(null);
@@ -104,10 +109,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (meRes?.success && meRes?.data) setUser(meRes.data);
         return res;
       } else {
-        throw new Error(res?.message || 'Login failed');
+        throw new Error(res?.message || fallback);
       }
     } catch (err: any) {
-      const msg = err.message || 'Login failed';
+      const msg = err.message || fallback;
       setError(msg);
       throw new Error(msg);
     } finally {
@@ -115,28 +120,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const register = async (userData: RegisterPayload) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await registerApi(userData);
-      if (res?.success && res?.data?.token) {
-        setToken(res.data.token);
-        setSessionError(null);
-        const meRes = await getMeApi();
-        if (meRes?.success && meRes?.data) setUser(meRes.data);
-        return res;
-      } else {
-        throw new Error(res?.message || 'Registration failed');
-      }
-    } catch (err: any) {
-      const msg = err.message || 'Registration failed';
-      setError(msg);
-      throw new Error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const login = (credentials: LoginPayload) => signIn(() => loginApi(credentials), 'Login failed');
+  const register = (userData: RegisterPayload) => signIn(() => registerApi(userData), 'Registration failed');
+  const loginWithGoogle = (payload: GoogleSignInPayload) => signIn(() => googleSignInApi(payload), 'Google sign-in failed');
 
   const logout = useCallback(() => handleSessionPurge(), [handleSessionPurge]);
 
@@ -155,7 +141,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, error, sessionError, retrySession: loadCurrentUser, login, register, logout, refreshUser, clearError }}
+      value={{ user, token, loading, error, sessionError, retrySession: loadCurrentUser, login, register, loginWithGoogle, logout, refreshUser, clearError }}
     >
       {children}
     </AuthContext.Provider>

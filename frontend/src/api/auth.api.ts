@@ -15,8 +15,32 @@ export interface RegisterPayload {
   invite?: string;
 }
 
-/** Sign-up settings (pilot invite code). */
-export const getAuthConfig = async () => (await api.get('/auth/config')).data?.data as { inviteRequired: boolean };
+export interface AuthConfig {
+  /** Pilot mode: sign-up needs an invite code. */
+  inviteRequired: boolean;
+  /** Google sign-in is on when the server has a client ID. */
+  googleClientId: string | null;
+}
+
+/** Sign-in and sign-up settings. */
+export const getAuthConfig = async () => (await api.get('/auth/config')).data?.data as AuthConfig;
+
+export interface GoogleSignInPayload {
+  /** The ID token from Google's button. */
+  credential: string;
+  /** Only needed when this creates the account. */
+  invite?: string;
+  targetDailySolved?: number;
+}
+
+/** Sign in, or sign up, with Google. */
+export const googleSignIn = async (payload: GoogleSignInPayload) => {
+  const res = await api.post('/auth/google', payload);
+  if (res.data?.data?.token) {
+    localStorage.setItem(TOKEN_KEY, res.data.data.token);
+  }
+  return res.data;
+};
 
 export const login = async (credentials: LoginPayload) => {
   const res = await api.post('/auth/login', credentials);

@@ -6,9 +6,16 @@ import mongoose from 'mongoose';
 import asyncHandler from '../utils/asyncHandler.js';
 import { todayPlan } from '../services/practiceService.js';
 import { completeReview } from '../services/reviewService.js';
-import { drillDeck } from '../services/drillService.js';
+import { drillDeck, drillStreak } from '../services/drillService.js';
 import { patternByKey } from '../data/patterns.js';
 import { isValidTimeZone } from '../services/analyticsService.js';
+
+/** ?tz= (defaults to UTC); sends 400 and throws if it isn't a real time zone. */
+function timeZoneOf(req, res) {
+  const tz = typeof req.query.tz === 'string' && req.query.tz ? req.query.tz : 'UTC';
+  if (!isValidTimeZone(tz)) { res.status(400); throw new Error('Invalid tz.'); }
+  return tz;
+}
 
 /**
  * @desc    Focus pattern, today's practice plan, reviews due, done today
@@ -16,9 +23,8 @@ import { isValidTimeZone } from '../services/analyticsService.js';
  * @access  Private
  */
 export const getToday = asyncHandler(async (req, res) => {
-  const tz = typeof req.query.tz === 'string' && req.query.tz ? req.query.tz : 'UTC';
-  if (!isValidTimeZone(tz)) { res.status(400); throw new Error('Invalid tz.'); }
-  res.status(200).json({ success: true, data: await todayPlan(req.user._id, { tz }) });
+  const tz = timeZoneOf(req, res);
+  res.status(200).json({ success: true, data: await todayPlan(req.user._id, { tz, targetDailySolved: req.user.targetDailySolved }) });
 });
 
 /**
@@ -45,4 +51,14 @@ export const getDrill = asyncHandler(async (req, res) => {
   const pattern = typeof req.query.pattern === 'string' && req.query.pattern ? req.query.pattern : null;
   if (pattern && !patternByKey.has(pattern)) { res.status(400); throw new Error('Unknown pattern.'); }
   res.status(200).json({ success: true, data: await drillDeck(req.user._id, { pattern }) });
+});
+
+/**
+ * @desc    Today's drill cards against the daily target, and the drill streak
+ * @route   GET /api/practice/drill/streak?tz=Asia/Kolkata
+ * @access  Private
+ */
+export const getDrillStreak = asyncHandler(async (req, res) => {
+  const tz = timeZoneOf(req, res);
+  res.status(200).json({ success: true, data: await drillStreak(req.user._id, { tz }) });
 });

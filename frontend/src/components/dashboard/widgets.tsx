@@ -2,36 +2,38 @@ import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from '@/components/ui/chart';
 import { cn } from '@/lib/utils';
 import { difficultyStyle } from '@/lib/difficulty';
-import type { AnalyticsSummary } from '@/hooks/useAnalytics';
+import type { AnalyticsSummary, Difficulty } from '@/hooks/useAnalytics';
 
 export { Panel, PanelLink, Meter, StatTile } from '@/components/panel';
 import { Meter } from '@/components/panel';
 
-// ── Monthly solved chart ──────────────────────────────────────────────────────
+// ── Solved chart (per day, week or month) ─────────────────────────────────────
 
 const LC = ['Easy', 'Medium', 'Hard'] as const;
 const CF = ['Div1', 'Div2', 'Div3', 'unrated'] as const;
 
-export function MonthlySolvedChart({ months }: { months: AnalyticsSummary['solvedByMonth'] }) {
-  const hasCf = months.some((m) => CF.some((d) => (m.byDifficulty?.[d] ?? 0) > 0));
+/** One bar: its axis label, the tooltip's fuller label, and solves by difficulty. */
+export interface SolvedRow { label: string; tip: string; byDifficulty: Partial<Record<Difficulty, number>> }
+
+/** Tooltip title from the row's `tip` (e.g. "Week of Oct 6") instead of the short axis label. */
+export const tipLabel = (value: unknown, payload: readonly { payload?: { tip?: string } }[]) => payload?.[0]?.payload?.tip ?? String(value ?? '');
+
+export function SolvedChart({ rows }: { rows: SolvedRow[] }) {
+  const hasCf = rows.some((r) => CF.some((d) => (r.byDifficulty[d] ?? 0) > 0));
   const keys = hasCf ? [...LC, ...CF] : [...LC];
   const config = Object.fromEntries(
     keys.map((k) => [k, { label: difficultyStyle(k).label, color: difficultyStyle(k).color }])
   ) satisfies ChartConfig;
 
-  const data = months.map((m) => {
-    const [y, mo] = m.month.split('-').map(Number);
-    const label = new Date(y, mo - 1, 1).toLocaleDateString(undefined, { month: 'short' });
-    return { label, ...Object.fromEntries(keys.map((k) => [k, m.byDifficulty?.[k] ?? 0])) };
-  });
+  const data = rows.map((r) => ({ label: r.label, tip: r.tip, ...Object.fromEntries(keys.map((k) => [k, r.byDifficulty[k] ?? 0])) }));
 
   return (
     <ChartContainer config={config} className="aspect-auto h-56 w-full">
       <BarChart data={data} margin={{ left: 0, right: 4, top: 4 }}>
         <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={12} />
         <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
-        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+        <ChartTooltip cursor={false} content={<ChartTooltipContent labelFormatter={tipLabel} />} />
         <ChartLegend content={<ChartLegendContent />} itemSorter={null} />
         {keys.map((k, i) => (
           <Bar

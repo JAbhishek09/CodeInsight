@@ -13,6 +13,8 @@ export interface PatternSummary {
 export interface PatternsOverview {
   patterns: PatternSummary[];
   totals: { problems: number; solved: number; attempted: number };
+  /** Same focus as Home's plan (server decides). */
+  focusKey: string | null;
 }
 
 export interface PatternProblem {
@@ -58,6 +60,8 @@ export interface PatternFeedback {
   predictedName: string;
   verdict: string | null;
   source: 'extension' | 'app' | 'drill';
+  /** Drill answer given after the hint (a right one is worth half). */
+  hinted?: boolean;
   createdAt: string;
   mapped: boolean;
   outcome: 'recognised' | 'right-pattern-bug' | 'missed' | 'wrong-approach' | 'unsure' | 'unmapped';
@@ -67,6 +71,8 @@ export interface PatternFeedback {
   pattern?: { key: string; name: string; short?: string; cue: string; complexity: string };
   secondary?: { key: string; name: string } | null;
   problem?: { title: string; difficulty: 'Easy' | 'Medium' | 'Hard'; url: string };
+  /** After a wrong guess: how to tell the real pattern from the one picked. */
+  contrast?: { key: string; name: string; tip: string } | null;
 }
 
 export interface PredictionStats {
@@ -74,7 +80,7 @@ export interface PredictionStats {
   correct: number;
   accuracy: number | null;
   perPattern: { key: string; attempts: number; correct: number; unsure: number; accuracy: number | null }[];
-  confusions: { actual: string; actualName: string; predicted: string; predictedName: string; count: number }[];
+  confusions: { actual: string; actualName: string; predicted: string; predictedName: string; count: number; tip: string | null }[];
 }
 
 /** See backend/services/diagnosisService.js. */
@@ -145,6 +151,10 @@ export interface TodayPlan {
   recognition: { attempts: number; accuracy: number | null };
   patterns: { key: string; name: string; solved: number; total: number; accuracy: number | null }[];
   onboarding: Onboarding;
+  /** Problems first solved today vs the daily target (same as Analytics). */
+  goal: { date: string; solved: number; target: number; remaining: number; goalMet: boolean };
+  /** Consecutive days with an accepted submission; alive until today ends. */
+  streak: { current: number; longest: number; activeToday: boolean; lastActiveDay: string | null };
 }
 
 /** Getting-started steps; see backend/services/pilotService.js. */
@@ -172,11 +182,55 @@ export interface DrillCard {
   slug: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   prompt: string;
+  /** The hint: words in the prompt that carry the clue. */
+  clues: string[];
   missedBefore: boolean;
+  hintedBefore: boolean;
+}
+
+/** See backend/services/drillService.js drillStreak(). */
+export interface DrillStreak {
+  /** Cards to answer in a day for it to count. */
+  target: number;
+  today: { date: string; cards: number; done: boolean };
+  streak: { current: number; longest: number; activeToday: boolean; lastActiveDay: string | null };
 }
 
 export interface DrillDeck {
   pattern: { key: string; name: string } | null;
   cards: DrillCard[];
   options: { key: string; name: string }[];
+}
+
+/** See backend/services/patternReportService.js. */
+export type PatternGap = 'not-started' | 'recognition' | 'speed' | 'edge-cases' | 'unfinished' | 'on-track';
+
+export interface PatternReportRow {
+  key: string;
+  name: string;
+  level: number;
+  total: number;
+  solved: number;
+  attempted: number;
+  recognition: { attempts: number; correct: number; accuracy: number | null };
+  submissions: number;
+  failures: { wrongAnswer: number; slow: number; crash: number };
+  firstSubmit: { solved: number; accepted: number; rate: number | null };
+  attemptsToAccept: number | null;
+  gap: PatternGap;
+}
+
+export interface PatternReport {
+  totals: {
+    keyProblems: number;
+    solved: number;
+    attempted: number;
+    recognition: { attempts: number; correct: number; accuracy: number | null };
+    firstSubmit: { solved: number; accepted: number; rate: number | null };
+    failures: { wrongAnswer: number; slow: number; crash: number };
+  };
+  patterns: PatternReportRow[];
+  /** rows: actual pattern; columns: the guess (8 patterns + 'unsure'); right guesses sit on the diagonal. */
+  matrix: { rows: string[]; columns: string[]; counts: number[][] };
+  mixups: { actual: string; predicted: string; count: number; tip: string | null }[];
 }

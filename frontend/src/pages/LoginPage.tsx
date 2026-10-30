@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import AuthLayout, { Field, FormError, PasswordInput } from '@/components/auth/AuthLayout';
+import { getAuthConfig } from '../api/auth.api';
+import AuthLayout, { Field, FormError, OrDivider, PasswordInput } from '@/components/auth/AuthLayout';
+import GoogleButton from '@/components/auth/GoogleButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -18,30 +20,38 @@ function useReturnPath() {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
-  const { login, user, token, loading: authLoading, clearError } = useAuth();
+  const { login, loginWithGoogle, user, token, loading: authLoading, clearError } = useAuth();
   const returnTo = useReturnPath();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
+  useEffect(() => { getAuthConfig().then((c) => setGoogleClientId(c?.googleClientId ?? null)).catch(() => {}); }, []);
 
   // Already signed in — nothing to do here.
   if (!authLoading && token && user) return <Navigate to={returnTo} replace />;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const run = async (signIn: () => Promise<unknown>, fallback: string) => {
     setError(null);
     clearError();
     try {
       setSubmitting(true);
-      await login({ email: email.trim(), password });
+      await signIn();
       onNavigate(returnTo);
     } catch (err) {
-      setError((err as Error).message || "Couldn't sign you in. Try again.");
+      setError((err as Error).message || fallback);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    run(() => login({ email: email.trim(), password }), "Couldn't sign you in. Try again.");
+  };
+  const handleGoogle = (credential: string) =>
+    run(() => loginWithGoogle({ credential }), "Couldn't sign you in with Google. Try again.");
 
   return (
     <AuthLayout
@@ -51,6 +61,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
     >
       <form onSubmit={handleSubmit} className="space-y-5" noValidate={false}>
         <FormError message={error} />
+        {googleClientId && (
+          <>
+            <GoogleButton clientId={googleClientId} text="signin_with" onCredential={handleGoogle} />
+            <OrDivider />
+          </>
+        )}
         <Field id="email" label="Email">
           <Input id="email" type="email" autoComplete="email" required value={email}
             onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" aria-invalid={!!error || undefined} />

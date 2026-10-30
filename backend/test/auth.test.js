@@ -64,6 +64,26 @@ describe('sign-up and sign-in', () => {
   });
 });
 
+describe('CORS', () => {
+  const loginFrom = (origin) => fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ email: 'x@example.com', password: 'nope12345' }),
+  });
+
+  test('the app’s own pages are allowed even when CLIENT_URL names another host', async () => {
+    const res = await loginFrom(baseUrl); // same host as the server, not in CLIENT_URL
+    assert.equal(res.status, 401, 'reaches the login handler');
+    assert.equal(res.headers.get('access-control-allow-origin'), baseUrl);
+  });
+
+  test('other sites are still refused', async () => {
+    const res = await loginFrom('https://evil.example.com');
+    assert.notEqual(res.status, 401);
+    assert.equal(res.headers.get('access-control-allow-origin'), null);
+  });
+});
+
 describe('session check (GET /api/auth/me)', () => {
   test('a valid token returns the user; bad, missing or orphaned tokens are 401', async () => {
     const user = await User.create({ name: 'S', email: 's@example.com', password: 'secret123' });

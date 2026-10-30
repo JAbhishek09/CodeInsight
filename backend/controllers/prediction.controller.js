@@ -13,18 +13,20 @@ import User from '../models/User.js';
 
 /**
  * @desc    Save a pattern guess. source=extension waits for the submission;
- *          source=app|drill resolves now and returns the feedback.
- * @route   POST /api/predictions  { slug, predicted, source }
+ *          source=app|drill resolves now and returns the feedback. A drill
+ *          answer given after the hint sends hinted: true (half credit).
+ * @route   POST /api/predictions  { slug, predicted, source, hinted? }
  * @access  Private
  */
 export const createPrediction = asyncHandler(async (req, res) => {
-  const { slug, predicted, source = 'extension' } = req.body ?? {};
+  const { slug, predicted, source = 'extension', hinted = false } = req.body ?? {};
   if (!isValidSlug(slug)) { res.status(400); throw new Error('Invalid problem slug.'); }
   if (!isValidPrediction(predicted)) { res.status(400); throw new Error('Unknown pattern.'); }
   if (!['extension', 'app', 'drill'].includes(source)) { res.status(400); throw new Error('Invalid source.'); }
+  if (typeof hinted !== 'boolean') { res.status(400); throw new Error('hinted must be true or false.'); }
 
   if (source === 'extension') await User.updateOne({ _id: req.user._id }, { $set: { extensionSeenAt: new Date() } });
-  const { prediction, feedback } = await recordPrediction({ userId: req.user._id, slug, predicted, source });
+  const { prediction, feedback } = await recordPrediction({ userId: req.user._id, slug, predicted, source, hinted });
   res.status(201).json({ success: true, data: { predictionId: String(prediction._id), feedback } });
 });
 

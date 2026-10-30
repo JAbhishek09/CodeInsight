@@ -8,20 +8,21 @@
  *   3. They submit → bridge.js uploads → backend returns feedback → card.
  * The answer is never shown before they submit.
  *
- * Keep PATTERNS in sync with backend/data/patterns.js.
+ * Keep PATTERNS in sync with backend/data/patterns.js, and the colours with
+ * the dark theme's --pat-* in frontend/src/index.css (colour-blind checked).
  */
 (function () {
   'use strict';
 
   var PATTERNS = [
-    { key: 'two-pointers', name: 'Two pointers', color: '#22d3ee' },
-    { key: 'prefix-hashing', name: 'Prefix sums & hashing', color: '#a3e635' },
-    { key: 'sliding-window', name: 'Sliding window', color: '#a78bfa' },
-    { key: 'binary-search', name: 'Binary search', color: '#fbbf24' },
-    { key: 'stack', name: 'Stack & monotonic stack', color: '#fb7185' },
-    { key: 'bfs-dfs', name: 'Graph & grid BFS/DFS', color: '#34d399' },
-    { key: 'heap-top-k', name: 'Heap & top-K', color: '#fb923c' },
-    { key: 'dp-1d', name: '1-D dynamic programming', color: '#e879f9' },
+    { key: 'two-pointers', name: 'Two pointers', color: '#1969e3' },
+    { key: 'prefix-hashing', name: 'Prefix sums & hashing', color: '#81a10d' },
+    { key: 'sliding-window', name: 'Sliding window', color: '#cb234b' },
+    { key: 'binary-search', name: 'Binary search', color: '#de55b7' },
+    { key: 'stack', name: 'Stack & monotonic stack', color: '#9145ca' },
+    { key: 'bfs-dfs', name: 'Graph & grid BFS/DFS', color: '#c06e0b' },
+    { key: 'heap-top-k', name: 'Heap & top-K', color: '#0a8566' },
+    { key: 'dp-1d', name: '1-D dynamic programming', color: '#10a0ce' },
   ];
   var byKey = {};
   PATTERNS.forEach(function (p) { byKey[p.key] = p; });
@@ -52,6 +53,7 @@
     '.link{background:none;border:0;color:#a5a7f8;cursor:pointer;font:inherit;font-size:12px;padding:0;margin-top:8px}',
     '.fb{border-left:3px solid var(--c);padding-left:10px;margin-top:4px}',
     '.fb .title{color:var(--c)}',
+    '.tip{margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid #27272a;background:#0f0f12;font-size:12.5px;line-height:1.45}',
     '.err{color:#f87171;font-size:12px;margin-top:8px}',
   ].join('');
 
@@ -158,6 +160,12 @@
         el('div', { class: 'title' }, [fb.title]),
         el('div', { style: 'margin-top:4px' }, [fb.message]),
       ]));
+      if (fb.contrast && fb.contrast.tip) {
+        body.push(el('div', { class: 'tip' }, [
+          el('div', { class: 'muted' }, ['How to tell ' + fb.pattern.name + ' from ' + fb.contrast.name]),
+          el('div', { style: 'margin-top:3px' }, [fb.contrast.tip]),
+        ]));
+      }
       if (fb.pattern) body.push(el('div', { class: 'muted', style: 'margin-top:8px' }, ['Optimal: ' + fb.pattern.complexity]));
       wrap.append(el('div', { class: 'card' }, body));
     }

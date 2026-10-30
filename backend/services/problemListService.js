@@ -5,6 +5,9 @@
  */
 
 import Problem from '../models/Problem.js';
+import Prediction from '../models/Prediction.js';
+import { patternByKey } from '../data/patterns.js';
+import { PROBLEM_PATTERNS, problemPatternBySlug } from '../data/problemPatterns.js';
 import { computeAiAnalysisMeta } from '../utils/aiMeta.js';
 import { attemptedExpr, solvedExpr } from '../utils/problemStatus.js';
 
@@ -52,9 +55,17 @@ export function parseListQuery(q = {}) {
     throw err;
   }
 
+  const pattern = q.pattern ? String(q.pattern) : '';
+  if (pattern && !patternByKey.has(pattern)) {
+    const err = new Error('Unknown pattern.');
+    err.statusCode = 400;
+    throw err;
+  }
+
   return {
     page,
     limit,
+    pattern,
     sort: { field: SORT_FIELDS[sortKey], dir: desc ? -1 : 1, key: rawSort },
     search: q.search ? String(q.search).trim() : '',
     difficulty: q.difficulty ? asList(q.difficulty) : [],
@@ -71,6 +82,11 @@ export async function listProblems(userId, opts) {
   if (opts.search) match.title = { $regex: escapeRegex(opts.search), $options: 'i' };
   // Tags match case-insensitively but whole-tag; several tags = any of them
   if (opts.tag.length) match.tags = { $in: opts.tag.map((t) => new RegExp(`^${escapeRegex(t)}$`, 'i')) };
+  // A pattern means its key LeetCode problems (the knowledge base is LeetCode-only)
+  if (opts.pattern) {
+    match.platform = opts.platform.length && !opts.platform.includes('leetcode') ? { $in: [] } : 'leetcode';
+    match.platformProblemId = { $in: PROBLEM_PATTERNS.filter((m) => m.pattern === opts.pattern).map((m) => m.slug) };
+  }
 
   const subs = { $ifNull: ['$submissions', []] };
   const acs = { $filter: { input: subs, as: 's', cond: { $eq: ['$$s.verdict', 'Accepted'] } } };
@@ -151,6 +167,28 @@ export async function listProblems(userId, opts) {
     for (const d of docs) staleById.set(String(d._id), computeAiAnalysisMeta(d).isStale);
   }
   for (const p of data) p.aiIsStale = staleById.get(String(p._id)) ?? false;
+
+  // Pattern (from the knowledge base) and the latest guess made while solving
+  // (extension or problem page; drills are separate practice, as on the problem page)
+  const slugs = data.filter((p) => p.platform === 'leetcode' && problemPatternBySlug.has(p.platformProblemId)).map((p) => p.platformProblemId);
+  const guessBySlug = new Map();
+  if (slugs.length) {
+    const preds = await Prediction.find(
+      { user: userId, slug: { $in: slugs }, resolvedAt: { $ne: null }, source: { $ne: 'drill' } },
+      { slug: 1, predicted: 1, isCorrect: 1, resolvedAt: 1 }
+    ).sort({ resolvedAt: -1 }).lean();
+    for (const g of preds) if (!guessBySlug.has(g.slug)) guessBySlug.set(g.slug, g);
+  }
+  for (const p of data) {
+    const m = p.platform === 'leetcode' ? problemPatternBySlug.get(p.platformProblemId) : null;
+    p.pattern = m ? { key: m.pattern, name: patternByKey.get(m.pattern)?.name ?? m.pattern } : null;
+    const g = m ? guessBySlug.get(p.platformProblemId) : null;
+    p.guess = g ? {
+      predicted: g.predicted,
+      predictedName: g.predicted === 'unsure' ? 'Not sure' : (patternByKey.get(g.predicted)?.name ?? g.predicted),
+      result: g.predicted === 'unsure' ? 'unsure' : g.isCorrect ? 'spotted' : 'missed',
+    } : null;
+  }
 
   return {
     data,

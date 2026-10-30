@@ -16,6 +16,7 @@ const PredictionSchema = new mongoose.Schema(
     predicted: { type: String, required: true },            // pattern key or 'unsure'
     actual: { type: String, default: null },                // pattern key, null if unmapped
     isCorrect: { type: Boolean, default: null },            // null when unmapped or unsure
+    hinted: { type: Boolean, default: false },              // drill: answered after the hint (half credit)
     verdict: { type: String, default: null },               // first submission's verdict after predicting
     submissionId: { type: String, default: null },
     resolvedAt: { type: Date, default: null },

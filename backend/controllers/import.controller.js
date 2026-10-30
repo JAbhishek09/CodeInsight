@@ -26,6 +26,7 @@ import Problem from '../models/Problem.js';
 import User from '../models/User.js';
 import { parseLeetcodeHandle } from '../utils/parseHandle.js';
 import * as lc from '../services/leetcodeService.js';
+import { fillMissingMeta, fillMissingMetaSoon } from '../services/problemMetaService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Session ownership
@@ -131,7 +132,9 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
           // LeetCode's solved list is authoritative — fixes problems that Pass 1
           // created as 'Attempted' because their newest submission wasn't AC.
           status: 'Solved',
-          difficulty: p.difficulty || 'Medium',
+          // The public list (no session) has no difficulty or tags: keep what
+          // the problem already has, and fill the gaps below.
+          ...(p.difficulty ? { difficulty: p.difficulty } : {}),
           ...(p.tags?.length ? { tags: p.tags } : {}),
         },
       },
@@ -140,6 +143,8 @@ export const importLeetcodeProblems = asyncHandler(async (req, res) => {
   }));
 
   const bulkResult = await Problem.bulkWrite(upsertOps, { ordered: false });
+  // Difficulty + tags for problems that came without them (always the case without a session)
+  fillMissingMetaSoon(userId);
 
   await User.findByIdAndUpdate(userId, {
     historyImportStatus: 'partial',
@@ -424,41 +429,6 @@ async function fillCodeForProblem(problem, session) {
   return pushed.modifiedCount > 0;
 }
 
-/**
- * Fills difficulty + topic tags for this user's LeetCode problems that have no
- * tags yet. LeetCode's solved list (Phase 1A) stops at 600 problems, so
- * problems beyond that only arrive via the history scan, without metadata.
- * Returns how many problems were updated.
- */
-async function fillMissingMeta(userId, session) {
-  // Repair difficulties stored as 'EASY'/'MEDIUM'/'HARD' by older imports —
-  // the app only understands 'Easy'/'Medium'/'Hard'.
-  for (const [raw, fixed] of [['EASY', 'Easy'], ['MEDIUM', 'Medium'], ['HARD', 'Hard']]) {
-    await Problem.updateMany({ user: userId, platform: 'leetcode', difficulty: raw }, { $set: { difficulty: fixed } });
-  }
-
-  const missing = await Problem.find(
-    { user: userId, platform: 'leetcode', $or: [{ tags: { $size: 0 } }, { tags: { $exists: false } }] },
-    { platformProblemId: 1 }
-  ).lean();
-  if (!missing.length) return 0;
-
-  const meta = await lc.fetchQuestionMeta(missing.map(p => p.platformProblemId), session);
-  const ops = [];
-  for (const [slug, m] of meta) {
-    const $set = {};
-    if (['Easy', 'Medium', 'Hard'].includes(m.difficulty)) $set.difficulty = m.difficulty;
-    if (m.tags.length) $set.tags = m.tags;
-    if (Object.keys($set).length) {
-      ops.push({ updateOne: { filter: { user: userId, platform: 'leetcode', platformProblemId: slug }, update: { $set } } });
-    }
-  }
-  if (!ops.length) return 0;
-  const r = await Problem.bulkWrite(ops, { ordered: false });
-  console.log(`[Import] Filled difficulty/tags for ${r.modifiedCount}/${missing.length} problems`);
-  return r.modifiedCount;
-}
-
 export const backfillMissingCode = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const { sessionCookie, after } = req.body ?? {};
@@ -477,7 +447,7 @@ export const backfillMissingCode = asyncHandler(async (req, res) => {
 
   // First call of Pass 2: Pass 1 has created every problem from the history,
   // so this is the point to fill in tags/difficulty the solved list missed.
-  const metaFilled = after ? 0 : await fillMissingMeta(userId, session);
+  const metaFilled = after ? 0 : await fillMissingMeta(userId, { session });
 
   const filter  = needsCodeFilter(userId);
   if (after) filter._id = { $gt: new mongoose.Types.ObjectId(String(after)) };
@@ -601,7 +571,7 @@ export const repairDifficulty = asyncHandler(async (req, res) => {
   const result = await Problem.bulkWrite(ops, { ordered: false });
   const fixed  = result.modifiedCount;
   // The solved list stops at 600 problems — fill the rest individually.
-  const extraFilled = await fillMissingMeta(userId, sessionCookie.trim());
+  const extraFilled = await fillMissingMeta(userId, { session: sessionCookie.trim() });
   const withTags = Array.from(infoMap.values()).filter(v => v.tags.length > 0).length;
 
   console.log(`[Repair] Done. ${fixed}/${ops.length} solved-list records updated, ${extraFilled} more filled individually.`);

@@ -22,9 +22,14 @@ const UserSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, 'Please provide a password'],
+      // Accounts made with Google have no password (they can add one with "Forgot password")
+      required: [function () { return !this.googleId; }, 'Please provide a password'],
       minlength: [6, 'Password must be at least 6 characters'],
       select: false,
+    },
+    googleId: {          // Google account ID ("sub"), set on Google sign-in
+      type: String,
+      default: undefined,
     },
     targetDailySolved: {
       type: Number,
@@ -110,10 +115,12 @@ UserSchema.pre('save', async function() {
  * Instance method: compare a plain password against the stored hash.
  */
 UserSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!this.password) return false; // Google-only account
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 UserSchema.index({ email: 1 }, { unique: true });
+UserSchema.index({ googleId: 1 }, { unique: true, sparse: true });
 
 const User = mongoose.model('User', UserSchema);
 export default User;

@@ -4,6 +4,7 @@ import { ArrowRight, Check, Sparkles } from 'lucide-react';
 import { usePatterns } from '../hooks/usePatterns';
 import { usePredictionStats } from '../hooks/usePredictions';
 import QueryError from '../components/QueryError';
+import ContrastTip from '../components/ContrastTip';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -12,17 +13,11 @@ import type { PatternSummary } from '@/types/pattern';
 
 const LEVEL_LABEL: Record<number, string> = { 1: 'Foundations', 2: 'Core', 3: 'Advanced' };
 
-/** The pattern to work on next: an unfinished one whose prerequisites are started. */
-function pickFocus(patterns: PatternSummary[]): PatternSummary | null {
-  const byKey = new Map(patterns.map((p) => [p.key, p]));
-  const ready = (p: PatternSummary) => p.requires.every((r) => {
-    const q = byKey.get(r);
-    return q && masteryOf(q.solved, q.attempted, q.total) !== 'new';
-  });
-  const open = patterns.filter((p) => masteryOf(p.solved, p.attempted, p.total) !== 'mastered' && ready(p));
-  if (open.length === 0) return null;
-  return [...open].sort((a, b) => a.level - b.level || a.solved / a.total - b.solved / b.total)[0];
-}
+const RECOGNITION_STEPS = [
+  'Open a problem — on LeetCode with the extension, or here.',
+  <>Pick the pattern <em>before</em> you code.</>,
+  'Submit (or check here) to see if you spotted it, and the clue you needed.',
+];
 
 /** Circular progress node for one pattern. */
 function PatternNode({ p, focus, recognition }: { p: PatternSummary; focus: boolean; recognition?: { attempts: number; accuracy: number | null } }) {
@@ -83,7 +78,8 @@ export default function PatternsPage() {
   const stats = usePredictionStats().data;
   const data = q.data;
   const accuracyOf = (key: string) => stats?.perPattern.find((p) => p.key === key);
-  const focus = data ? pickFocus(data.patterns) : null;
+  // The server picks the focus (same rule as Home), so the two always agree
+  const focus = data?.patterns.find((p) => p.key === data.focusKey) ?? null;
   const mastered = data?.patterns.filter((p) => masteryOf(p.solved, p.attempted, p.total) === 'mastered').length ?? 0;
   const levels = data ? [...new Set(data.patterns.map((p) => p.level))].sort() : [];
 
@@ -164,34 +160,46 @@ export default function PatternsPage() {
       </section>
 
       {stats && (
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-border bg-surface-1 p-4">
-            <h2 className="text-sm font-semibold text-foreground">Patterns you mix up</h2>
-            {stats.confusions.length === 0 ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {stats.attempts === 0 ? 'Guess the pattern on a few problems to see this.' : 'No mix-ups yet — nice.'}
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {stats.confusions.map((c) => (
-                  <li key={c.actual + c.predicted} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 truncate">
+        // One full-width card: the mix-ups, then how recognition works as a strip
+        // (side by side, the short steps box left a gap beside a long list)
+        <section aria-labelledby="mixups-title" className="rounded-xl border border-border bg-surface-1 p-4 sm:p-5">
+          <h2 id="mixups-title" className="text-sm font-semibold text-foreground">Patterns you mix up</h2>
+          {stats.confusions.length === 0 ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              {stats.attempts === 0 ? 'Guess the pattern on a few problems to see this.' : 'No mix-ups yet — nice.'}
+            </p>
+          ) : (
+            // Two balanced columns on wide screens, so the tips don't run long and narrow
+            <ul className="mt-3 gap-x-8 lg:columns-2">
+              {stats.confusions.map((c) => (
+                <li key={c.actual + c.predicted} className="mb-4 space-y-1.5 text-sm break-inside-avoid">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0">
                       <Link to={`/patterns/${c.actual}`} style={patternStyle(c.actual)} className="font-medium pat-text hover:underline">{c.actualName}</Link>
                       <span className="text-muted-foreground"> guessed as </span>
                       <span className="text-foreground">{c.predictedName}</span>
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{c.count}×</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="rounded-xl border border-border bg-surface-1 p-4">
-            <h2 className="text-sm font-semibold text-foreground">How recognition works</h2>
-            <ol className="mt-2 list-inside list-decimal space-y-1.5 text-sm text-muted-foreground">
-              <li>Open a problem — on LeetCode with the extension, or here.</li>
-              <li>Pick the pattern <em>before</em> you code.</li>
-              <li>Submit (or check here) to see if you spotted it, and the clue you needed.</li>
+                  </div>
+                  {c.tip && (
+                    <ContrastTip compact actual={{ key: c.actual, name: c.actualName }} other={{ key: c.predicted, name: c.predictedName }} tip={c.tip} />
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className={cn('border-t border-border pt-4', stats.confusions.length ? 'mt-1' : 'mt-5')}>
+            <h3 className="text-xs font-medium uppercase tracking-wide text-subtle">How recognition works</h3>
+            <ol className="mt-3 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+              {RECOGNITION_STEPS.map((step, i) => (
+                <li key={i} className="flex gap-2.5">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-3 text-[11px] font-semibold tabular-nums text-foreground" aria-hidden>
+                    {i + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
             </ol>
           </div>
         </section>

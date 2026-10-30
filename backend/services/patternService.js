@@ -8,7 +8,7 @@ import { PATTERNS, patternByKey } from '../data/patterns.js';
 import { PROBLEM_PATTERNS, problemPatternBySlug } from '../data/problemPatterns.js';
 
 /** solved | attempted | todo for one stored problem (same rule as the list view). */
-function statusOf(doc) {
+export function statusOf(doc) {
   const subs = doc.submissions ?? [];
   if (subs.some((s) => s.verdict === 'Accepted')) return 'solved';
   if (doc.status === 'Solved' && (doc.platform === 'manual' || subs.length === 0)) return 'solved';

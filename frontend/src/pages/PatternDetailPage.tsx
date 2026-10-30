@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, ExternalLink, Eye, Search, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, Eye, PlayCircle, Search, Zap } from 'lucide-react';
 import { usePattern } from '../hooks/usePatterns';
 import QueryError from '../components/QueryError';
 import DifficultyBadge from '../components/DifficultyBadge';
 import CodeBlock from '@/components/problem/CodeBlock';
 import { Panel } from '@/components/panel';
+import { WALKTHROUGHS } from '@/components/walkthrough/visuals';
+import WorkedExample from '@/components/walkthrough/WorkedExample';
+import { WORKED_EXAMPLES } from '@/content/workedExamples';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
@@ -25,14 +28,17 @@ function ProblemRow({ p }: { p: PatternProblem }) {
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-3">
       <span className={cn('size-2 shrink-0 rounded-full', s.dot)} title={s.label} aria-label={s.label} />
       <span className="min-w-0 flex-1 basis-56">
-        {p.problemId
-          ? <Link to={`/problems/${p.problemId}`} className="font-medium text-foreground hover:underline">{p.title}</Link>
-          : <span className="font-medium text-foreground">{p.title}</span>}
-        {!p.primary && <span className="ml-2 text-xs text-subtle">(also uses this)</span>}
+        <span className="flex flex-wrap items-baseline gap-x-2">
+          {p.problemId
+            ? <Link to={`/problems/${p.problemId}`} className="font-medium text-foreground hover:underline">{p.title}</Link>
+            : <span className="font-medium text-foreground">{p.title}</span>}
+          {p.status !== 'todo' && <span className={cn('text-xs font-medium', p.status === 'solved' ? 'text-success' : 'text-warning')}>{s.label}</span>}
+          {!p.primary && <span className="text-xs text-subtle">(also uses this)</span>}
+        </span>
         {showCue
-          ? <span className="mt-0.5 block text-xs pat-text">Clue: {p.cue} · {p.complexity}</span>
+          ? <span className="mt-1 block text-xs text-foreground/80"><span className="font-medium pat-text">Clue:</span> {p.cue} · {p.complexity}</span>
           : (
-            <button type="button" onClick={() => setShowCue(true)} className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <button type="button" onClick={() => setShowCue(true)} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
               <Eye className="size-3" /> Show the clue
             </button>
           )}
@@ -62,6 +68,8 @@ export default function PatternDetailPage() {
     return <div className="space-y-4" aria-busy="true"><Skeleton className="h-6 w-40" /><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
   }
 
+  const walkthrough = WALKTHROUGHS[p.key];
+  const example = WORKED_EXAMPLES[p.key];
   const solved = p.problems.filter((x) => x.status === 'solved' && x.primary).length;
   const total = p.problems.filter((x) => x.primary).length;
   const pct = total ? Math.round((solved / total) * 100) : 0;
@@ -87,6 +95,12 @@ export default function PatternDetailPage() {
         </div>
       </header>
 
+      {walkthrough && (
+        <Panel title="Watch it work" action={<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><PlayCircle className="size-3.5" /> {walkthrough.problem} · step through with ← →</span>}>
+          <walkthrough.View />
+        </Panel>
+      )}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="What it is">
           <p className="text-sm leading-relaxed text-muted-foreground">{p.explanation}</p>
@@ -101,6 +115,12 @@ export default function PatternDetailPage() {
           </ul>
         </Panel>
       </div>
+
+      {example && (
+        <Panel title="Worked example" action={<span className="hidden text-xs text-muted-foreground sm:inline">The problem the walkthrough runs, from statement to code</span>}>
+          <WorkedExample ex={example} progress={p.problems.find((x) => x.slug === example.slug)} />
+        </Panel>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Common wrong turns">

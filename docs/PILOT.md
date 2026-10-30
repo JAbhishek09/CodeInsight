@@ -7,7 +7,7 @@ answers: **does recognising the pattern get better week over week?**
 
 | Measure | Where | Why |
 |---|---|---|
-| **First-try recognition accuracy per week** (headline) | `scripts/pilotReport.js`, student's Home | First guess a student ever makes on a problem. Repeat drills of a seen problem are excluded, so the number can't climb by memorising cards. "Not sure" counts as wrong. |
+| **First-try recognition accuracy per week** (headline) | `scripts/pilotReport.js`, student's Home | First guess a student ever makes on a problem. Repeat drills of a seen problem are excluded, so the number can't climb by memorising cards. "Not sure" counts as wrong; a right answer after the drill's hint counts as half. |
 | All-guess accuracy per week | report CSV | Includes repeats; shows practice volume. |
 | Guesses by source (drill / extension / app) | report CSV | Are they using it on LeetCode, or only drilling? |
 | Active days per week | report CSV | Engagement. |
@@ -77,20 +77,26 @@ Environment variables (see `backend/.env.example`):
 | `AI_DAILY_LIMIT` | `3` (see the AI note above); leave `GEMINI_MODELS` and `AI_AUTO_REVIEW` unset |
 | `TRUST_PROXY` | `1` on Render/Railway/Fly (behind one proxy) |
 | `PILOT_INVITE_CODE` | your code |
+| `GOOGLE_CLIENT_ID` | optional: a Google OAuth Web client ID, to show "Sign in with Google" (new Google accounts still need the invite code) |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `EMAIL_FROM` | for "Forgot password" emails, sent from your Gmail through the Gmail API. Render's free plan blocks SMTP, so `EMAIL_USERNAME`/`EMAIL_PASSWORD` only work locally or on a paid plan. Without either, "Forgot password" says email isn't set up |
 | `DNS_SERVERS` | `system` if the host's DNS resolves Atlas SRV records (most do) |
 | `EXTENSION_ID` | leave empty — see "Known limits" |
 
 What production mode changes: missing secrets stop the server at startup,
 `/api/diagnose` is not mounted, and localhost origins are not allowed.
 
-## 3. Package the extension
+## 3. The extension
+
+Nothing to package by hand. Students download it from the site: Profile →
+Connections → Browser extension → **Download extension (.zip)**
+(`GET /api/extension/download`). The server builds the zip already pointed at
+its own address (host permission, default server address, popup link).
+
+To test a build locally as an unpacked folder instead:
 
 ```bash
 node extension/scripts/package.mjs --api https://codeinsight.example.com
 ```
-
-This writes `extension-dist/` pointing at the production server (host
-permission, default server address, popup link). Zip the folder and share it.
 
 ## 4. Smoke test (15 minutes, on the deployed URL)
 
@@ -99,10 +105,12 @@ permission, default server address, popup link). Zip the folder and share it.
       the **Get started** checklist.
 - [ ] Profile → Connections: add a LeetCode username; Import: import history.
 - [ ] Home shows a focus pattern and today's plan.
-- [ ] Drill: finish a deck; Home shows **Recognition by week**.
-- [ ] Install the packaged extension in a clean Chrome profile, paste the
-      token and server address from Profile → Connections → Browser
-      extension. On a LeetCode problem the **Which pattern?** card appears;
+- [ ] Drill: finish a deck, using the hint on one card (it scores half a
+      point); the drill page shows today's 10 cards done; Home shows
+      **Recognition by week**.
+- [ ] In a clean Chrome profile, download the extension from Profile →
+      Connections → Browser extension, unzip, Load unpacked, and paste the
+      sign-in token. On a LeetCode problem the **Which pattern?** card appears;
       after submitting, the feedback card shows; Connections shows
       "Connected".
 - [ ] `node scripts/pilotReport.js --weeks 1` lists the test account. Delete
@@ -113,9 +121,9 @@ permission, default server address, popup link). Zip the folder and share it.
 Send each student:
 
 1. The link and the invite code.
-2. The zipped extension and the three steps from Profile → Connections →
-   Browser extension (Chrome → `chrome://extensions` → Developer mode →
-   Load unpacked).
+2. A pointer to Profile → Connections → Browser extension, where they
+   download the extension and follow the four steps (unzip →
+   `chrome://extensions` → Developer mode → Load unpacked → paste token).
 3. The ask: *"For two weeks, before you start any LeetCode problem, pick the
    pattern in the CodeInsight card first. Do a 2-minute drill on days you
    don't code. Home shows what to practise each day."*

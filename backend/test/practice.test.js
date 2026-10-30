@@ -169,3 +169,39 @@ describe('GET /api/practice/today', () => {
     assert.equal((await call('GET', '/api/practice/today?tz=Not/AZone')).status, 400);
   });
 });
+
+describe('daily goal and streak on Home', () => {
+  test('match the Analytics numbers: first solves today vs target, and the solving streak', async () => {
+    await User.updateOne({ _id: user._id }, { targetDailySolved: 3 });
+    const now = Date.now();
+    const daysAgo = (d, h = 0) => new Date(now - d * DAY - h * 3600e3).toISOString();
+    await lc('two-sum', [ac(daysAgo(0))]);                                    // first solve today
+    await lc('valid-anagram', [sub(daysAgo(0), 'Wrong Answer'), ac(daysAgo(0))]); // first solve today
+    await lc('house-robber', [ac(daysAgo(1))]);                               // yesterday
+    await lc('climbing-stairs', [ac(daysAgo(2)), ac(daysAgo(0))]);            // re-solved today: streak day, not a new solve
+    await lc('coin-change', [sub(daysAgo(0), 'TLE')]);                       // attempted only
+
+    const home = (await call('GET', '/api/practice/today?tz=UTC')).body.data;
+    assert.equal(home.goal.solved, 2);
+    assert.equal(home.goal.target, 3);
+    assert.equal(home.goal.remaining, 1);
+    assert.equal(home.goal.goalMet, false);
+    assert.equal(home.streak.current, 3);
+    assert.equal(home.streak.activeToday, true);
+
+    const summary = (await call('GET', '/api/analytics/summary?tz=UTC')).body.data;
+    assert.deepEqual(home.goal, summary.today);
+    assert.deepEqual(home.streak, summary.streak);
+  });
+
+  test('a streak that ended yesterday is still alive until today is over', async () => {
+    const now = Date.now();
+    await lc('two-sum', [ac(new Date(now - DAY).toISOString())]);
+    await lc('house-robber', [ac(new Date(now - 2 * DAY).toISOString())]);
+    const { streak, goal } = (await call('GET', '/api/practice/today?tz=UTC')).body.data;
+    assert.equal(streak.current, 2);
+    assert.equal(streak.activeToday, false);
+    assert.equal(goal.solved, 0);
+    assert.equal(goal.target, 1, 'default target');
+  });
+});

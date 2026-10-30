@@ -7,6 +7,8 @@
 import asyncHandler from '../utils/asyncHandler.js';
 import { buildAnalyticsSummary, isValidTimeZone, PLATFORMS } from '../services/analyticsService.js';
 import { buildAiInsights } from '../services/aiInsightsService.js';
+import { buildPatternReport } from '../services/patternReportService.js';
+import { countMissingMeta, fillMissingMetaSoon, isFillingMeta } from '../services/problemMetaService.js';
 
 /**
  * @desc    Get analytics summary for the logged-in user
@@ -33,6 +35,13 @@ export const getAnalyticsSummary = asyncHandler(async (req, res) => {
     targetDailySolved: req.user.targetDailySolved,
   });
 
+  // LeetCode problems that came without topic tags (from the extension, or an
+  // import without a session) get them in the background; the client checks
+  // back while topicsLoading is true.
+  data.topicsLoading = platform !== 'codeforces'
+    && (await countMissingMeta(req.user._id)) > 0
+    && (fillMissingMetaSoon(req.user._id) || isFillingMeta(req.user._id));
+
   res.status(200).json({ success: true, data });
 });
 
@@ -50,4 +59,14 @@ export const getAiInsights = asyncHandler(async (req, res) => {
   }
   const data = await buildAiInsights({ userId: req.user._id, platform });
   res.status(200).json({ success: true, data });
+});
+
+/**
+ * @desc    Per-pattern report: solved, spotted, how solutions fail, biggest
+ *          gap; plus the mix-up grid (actual pattern × guess) with tips
+ * @route   GET /api/analytics/patterns
+ * @access  Private
+ */
+export const getPatternReport = asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, data: await buildPatternReport(req.user._id) });
 });

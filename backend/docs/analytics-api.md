@@ -78,7 +78,9 @@ Send the browser's zone: `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 
     // Exactly 365 entries, oldest first, every day present (count may be 0).
     // Each problem is counted ONCE, on its solve day. Use for the heatmap and solved trend.
-    "solvedByDay": [ { "date": "2025-10-18", "count": 0 }, /* ... */ { "date": "2026-10-17", "count": 2 } ],
+    // Days with solves also carry byDifficulty (only the difficulties that occur), so
+    // charts can stack by difficulty per day or week.
+    "solvedByDay": [ { "date": "2025-10-18", "count": 0 }, /* ... */ { "date": "2026-10-17", "count": 2, "byDifficulty": { "Easy": 1, "Medium": 1 } } ],
 
     // Exactly 12 entries, oldest first, ending with the current month. Same rule as solvedByDay.
     // byDifficulty always has all 8 keys.
@@ -110,6 +112,11 @@ Send the browser's zone: `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 
     // One row per tag, sorted by total (desc) then tag name. Duplicate tags on a problem count once.
     "topics": [ { "tag": "Array", "total": 370, "solved": 337, "attempted": 33 } /* ... */ ],
+
+    // true while LeetCode tags (and difficulty) are being fetched in the background for
+    // problems that came without them — from the extension, or an import without a
+    // session. Ask again in a few seconds. See services/problemMetaService.js.
+    "topicsLoading": false,
 
     // Problems grouped by the language of their LATEST Accepted submission, sorted by count desc.
     // Problems with no Accepted submission are left out.

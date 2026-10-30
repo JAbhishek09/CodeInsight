@@ -50,7 +50,7 @@ export function StatTile({ label, value, sub, children }: {
   return (
     <div className="flex flex-col gap-1 rounded-lg border border-border bg-surface-1 p-4">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold tabular-nums tracking-tight text-foreground">{value}</p>
+      <p className="text-2xl font-semibold tracking-tight text-foreground">{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
       {children && <div className="mt-auto pt-2">{children}</div>}
     </div>

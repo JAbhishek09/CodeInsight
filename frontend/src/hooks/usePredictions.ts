@@ -37,6 +37,8 @@ export function useGuessPattern(slug: string | undefined) {
       qc.setQueryData(['predictions', 'latest', slug], feedback);
       qc.invalidateQueries({ queryKey: ['predictions', 'stats'] });
       qc.invalidateQueries({ queryKey: ['practice'] }); // a missed guess queues a review
+      qc.invalidateQueries({ queryKey: ['analytics', 'patterns'] });
+      qc.invalidateQueries({ queryKey: ['problems', 'list'] });
     },
   });
 }
